@@ -265,7 +265,9 @@ namespace
 			// community drives through ReShade. Reported only; Streamline 2.13 ships
 			// no public options struct for it, so there is nothing to switch on yet.
 			if (sl->featureDLSSNR) {
-				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: driver reports it available");
+				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: Streamline plugin");
+			} else if (sl->directDLSSNRReady) {
+				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: direct NGX path ready");
 			} else {
 				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering unavailable (%s)", sl->dlssnrStatus.c_str());
 			}

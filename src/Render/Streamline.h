@@ -18,6 +18,11 @@
 #include <sl_reflex.h>
 #include <sl_version.h>
 #pragma warning(pop)
+// DLSS 5 Neural Rendering: NVIDIA publishes no Streamline contract for it, so
+// the reconstructed ABI and the direct-NGX backend both live under src/Neural.
+#include "Neural/nvngx_dlss_nr_private.h"
+#include "Neural/sl_dlss_nr.h"
+
 #include "Buffer.h"
 
 #include <limits>
@@ -227,8 +232,13 @@ public:
 	bool featureDLSSG = false; ///< True if DLSS Frame Generation is available
 	bool featureDLSSD = false; ///< True if DLSS Ray Reconstruction (DLSS-D) is available
 	std::string dlssdStatus{ "not checked" }; ///< Human-readable DLSS-RR availability reason (for the menu)
-	bool featureDLSSNR = false; ///< True if DLSS 5 Neural Rendering (nvngx_dlssnr.dll) is available
+	bool featureDLSSNR = false; ///< True if Streamline's own DLSS-NR plugin came up
 	std::string dlssnrStatus{ "not checked" }; ///< Human-readable DLSS-NR availability reason (for the menu)
+	/// True once the direct-NGX DLSS-NR backend has initialised. Streamline
+	/// rejects the preview NR plugin on most driver/runtime combinations, so this
+	/// is the path that actually carries the feature.
+	bool directDLSSNRReady = false;
+	[[nodiscard]] bool IsDLSSNRUsable() const { return featureDLSSNR || directDLSSNRReady; }
 	bool featureNIS = false; ///< True if NVIDIA Image Scaling is available
 	bool featureReflex = false; ///< True if NVIDIA Reflex is available
 	bool featurePCL = false; ///< True if PCL markers are available
@@ -297,6 +307,10 @@ public:
 
 private:
 	void CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bool& a_available, std::string_view a_name, std::string* a_status = nullptr);
+	/// Stand up the direct-NGX DLSS-NR backend. Called after Streamline rejects
+	/// its own NR plugin -- once from CheckFeatures and again from PostDevice,
+	/// because the first query runs before the proxy has a D3D12 device.
+	void PrepareDirectDLSSNR();
 	bool EnsureFrameToken(uint32_t a_frameIndex);
 	bool ApplyNISSharpen(ID3D11Resource* a_inputColor, ID3D11Resource* a_outputColor, ID3D11DeviceContext* a_context, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
 	bool ApplyNISSharpenD3D12(ID3D12Resource* a_inputColor, ID3D12Resource* a_outputColor, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
@@ -338,6 +352,10 @@ private:
 	uint32_t currentD3D12DLSSOutputWidth = 0;
 	uint32_t currentD3D12DLSSOutputHeight = 0;
 	uint currentD3D12DLSSModelPreset = std::numeric_limits<uint>::max();
+
+	/// Direct NGX DLSS-NR. Owns its own load of nvngx_dlssnr.dll and talks to the
+	/// snippet's entry points; entirely independent of the Streamline plugin.
+	nvngx::dlss_nr::D3D12Backend directDLSSNR;
 
 	bool currentD3D12DLSSDOptionsValid = false;
 	sl::DLSSMode currentD3D12DLSSDMode = sl::DLSSMode::eOff;

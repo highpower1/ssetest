@@ -6,6 +6,7 @@
 
 #include "Game/Util.h"
 #include "Game/Renderer.h"
+#include "Render/DX12SwapChain.h"  // proxy D3D12 device, for the direct NGX DLSS-NR init
 #include "Upscaler/Upscaling.h"
 
 namespace
@@ -270,17 +271,55 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 	slGetNewFrameToken = (PFun_slGetNewFrameToken*)GetProcAddress(interposer, "slGetNewFrameToken");
 	slSetD3DDevice = (PFun_slSetD3DDevice*)GetProcAddress(interposer, "slSetD3DDevice");
 
-	if (SL_FAILED(res, slInit(pref, sl::kSDKVersion))) {
+	// The DLSS-NR preview runtime is versioned separately from the rest of
+	// Streamline: initialising with the stock kSDKVersion is what makes the NR
+	// plugin report itself out of date. Announce the preview version whenever the
+	// NR runtime is on disk.
+	const auto dlssNRRuntimePresent =
+		a_renderAPI == sl::RenderAPI::eD3D12 &&
+		!interposerDirectory.empty() &&
+		std::filesystem::exists(std::filesystem::path(interposerDirectory) / L"sl.dlss_nr.dll");
+	const auto sdkVersion = dlssNRRuntimePresent ? sl::kSDKVersionDLSSNRPreview : sl::kSDKVersion;
+
+	directDLSSNR.SetRuntimeDirectory(std::filesystem::path(interposerDirectory));
+
+	if (SL_FAILED(res, slInit(pref, sdkVersion))) {
 		logger::critical("[Streamline] Failed to initialize Streamline: {}", magic_enum::enum_name(res));
 	} else {
 		initialized = true;
 		initializedRenderAPI = a_renderAPI;
-		logger::info("[Streamline] Successfully initialized Streamline");
+		logger::info("[Streamline] Successfully initialized Streamline sdkVersion=0x{:016X} (DLSS-NR preview: {})",
+			sdkVersion, dlssNRRuntimePresent);
+	}
+}
+
+void Streamline::PrepareDirectDLSSNR()
+{
+	if (!UsesD3D12() || featureDLSSNR || directDLSSNRReady) {
+		return;
+	}
+
+	auto* device = DX12SwapChain::GetSingleton()->GetD3D12Device();
+	if (!device) {
+		logger::info("[DLSS-NR Direct] D3D12 device is not ready; initialization stays deferred");
+		return;
+	}
+
+	logger::info("[DLSS-NR Direct] Streamline's DLSS-NR plugin is unavailable; initializing the direct NGX path");
+	directDLSSNRReady = directDLSSNR.Prepare(device);
+	logger::info("[DLSS-NR Direct] Direct NGX DLSS-NR {}", directDLSSNRReady ? "is ready" : "could not be initialized");
+	if (directDLSSNRReady) {
+		dlssnrStatus = "direct NGX path";
 	}
 }
 
 void Streamline::Shutdown()
 {
+	// The direct NGX backend owns its own load of the snippet and its own NGX
+	// init, so it has to come down before Streamline's.
+	directDLSSNR.Shutdown();
+	directDLSSNRReady = false;
+
 	if (initialized && slShutdown) {
 		if (SL_FAILED(result, slShutdown())) {
 			logger::warn("[Streamline] Shutdown failed: {}", magic_enum::enum_name(result));
@@ -291,6 +330,7 @@ void Streamline::Shutdown()
 	initializedRenderAPI = sl::RenderAPI::eD3D11;
 	featureDLSS = false;
 	featureDLSSG = false;
+	featureDLSSNR = false;
 	featureNIS = false;
 	featureReflex = false;
 	featurePCL = false;
@@ -408,6 +448,9 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 	if (UsesD3D12()) {
 		CheckFeature(sl::kFeatureDLSS_RR, a_adapter, featureDLSSD, "DLSS-RR", &dlssdStatus);
 		CheckFeature(sl::kFeatureDLSS_NR, a_adapter, featureDLSSNR, "DLSS-NR", &dlssnrStatus);
+		if (!featureDLSSNR) {
+			PrepareDirectDLSSNR();
+		}
 	} else {
 		featureDLSSD = false;
 		featureDLSSNR = false;
@@ -441,6 +484,12 @@ void Streamline::PostDevice()
 	if (featureDLSSG) {
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGGetState", (void*&)slDLSSGGetState);
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGSetOptions", (void*&)slDLSSGSetOptions);
+	}
+
+	// The first feature query runs before the proxy owns a D3D12 device, so this
+	// is the earliest point the direct NGX Init_Ext can actually succeed.
+	if (!featureDLSSNR) {
+		PrepareDirectDLSSNR();
 	}
 
 	if (featureDLSSD) {
