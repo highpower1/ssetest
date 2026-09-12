@@ -168,7 +168,6 @@ private:
 	// after the queue drains, and the uplift skipped for that one frame.
 	bool     neuralRenderingSkipFrame = false;
 	bool     neuralAfterUpscale = true;        // uplift the resolved image, not the raw scene
-	bool     loggedNeuralOrderFallback = false;
 	bool     neuralDebugBypass = false;
 	bool     loggedNeuralDebugBypass = false;
 	// Set for the frames where the uplift ran after the upscaler: present and

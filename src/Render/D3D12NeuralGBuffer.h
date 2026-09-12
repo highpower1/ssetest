@@ -64,9 +64,34 @@ public:
 		const DirectX::XMMATRIX&     a_view,
 		const DirectX::XMMATRIX&     a_proj);
 
+	// Guides for DLSS 5 Neural Rendering running AFTER the upscaler.
+	//
+	// The uplift then works on the resolved, display-resolution, unjittered image,
+	// but the engine's motion vectors and depth are render-resolution and were
+	// rasterised WITH jitter. Feeding them as-is misaligns every guide by the
+	// sub-pixel jitter and confines the uplift to Native AA. This pass resamples
+	// both to display resolution and reads each output pixel at the raster
+	// position where its feature actually landed, then scales motion into display
+	// pixels (which is what NGX wants).
+	//
+	// a_jitterPixels is the engine's current jitter in pixels; features are
+	// displaced by its negation, so that is where the sampling looks.
+	bool GenerateUpliftGuides(
+		ID3D12Device*              a_device,
+		ID3D12GraphicsCommandList* a_commandList,
+		ID3D12Resource*            a_motionVectors,
+		ID3D12Resource*            a_depth,
+		std::uint32_t              a_renderWidth,
+		std::uint32_t              a_renderHeight,
+		std::uint32_t              a_displayWidth,
+		std::uint32_t              a_displayHeight,
+		DirectX::XMFLOAT2          a_jitterPixels);
+
 	[[nodiscard]] ID3D12Resource* GetNormalRoughness() const { return normalRoughness.get(); }
 	[[nodiscard]] ID3D12Resource* GetAlbedo() const { return albedo.get(); }
 	[[nodiscard]] ID3D12Resource* GetSpecularAlbedo() const { return specularAlbedo.get(); }
+	[[nodiscard]] ID3D12Resource* GetUpliftMotionVectors() const { return upliftMotion.get(); }
+	[[nodiscard]] ID3D12Resource* GetUpliftDepth() const { return upliftDepth.get(); }
 
 	void Reset();
 
@@ -81,13 +106,16 @@ private:
 
 	winrt::com_ptr<ID3D12Device>         device;
 	winrt::com_ptr<ID3D12RootSignature>  rootSignature;
-	winrt::com_ptr<ID3D12PipelineState>  pipelineState;
+	winrt::com_ptr<ID3D12PipelineState>  pipelineState;        // normals + roughness
+	winrt::com_ptr<ID3D12PipelineState>  upliftGuidePipeline;  // resampled motion + depth
 	winrt::com_ptr<ID3D12DescriptorHeap> srvHeap;
 	winrt::com_ptr<ID3D12DescriptorHeap> rtvHeap;
 
 	winrt::com_ptr<ID3D12Resource> normalRoughness;
 	winrt::com_ptr<ID3D12Resource> albedo;
 	winrt::com_ptr<ID3D12Resource> specularAlbedo;
+	winrt::com_ptr<ID3D12Resource> upliftMotion;
+	winrt::com_ptr<ID3D12Resource> upliftDepth;
 
 	std::uint32_t currentWidth = 0;
 	std::uint32_t currentHeight = 0;

@@ -43,15 +43,22 @@ namespace
 		a_commandList->ResourceBarrier(1, &barrier);
 	}
 
-	// Descriptor slots in srvHeap.
-	constexpr std::uint32_t kSRVDepth = 0;
-	constexpr std::uint32_t kSRVCount = 1;
+	// Descriptor slots in srvHeap. Each pass binds a contiguous pair, because the
+	// shared root signature declares a two-SRV table; the normals pass simply
+	// ignores its second entry.
+	constexpr std::uint32_t kSRVNormalsDepth = 0;
+	constexpr std::uint32_t kSRVNormalsUnused = 1;
+	constexpr std::uint32_t kSRVUpliftMotion = 2;
+	constexpr std::uint32_t kSRVUpliftDepth = 3;
+	constexpr std::uint32_t kSRVCount = 4;
 
 	// Descriptor slots in rtvHeap.
 	constexpr std::uint32_t kRTVNormalRoughness = 0;
 	constexpr std::uint32_t kRTVAlbedo = 1;
 	constexpr std::uint32_t kRTVSpecularAlbedo = 2;
-	constexpr std::uint32_t kRTVCount = 3;
+	constexpr std::uint32_t kRTVUpliftMotion = 3;
+	constexpr std::uint32_t kRTVUpliftDepth = 4;
+	constexpr std::uint32_t kRTVCount = 5;
 
 	const char* const kShaderSource = R"(
 Texture2D<float> CameraZ : register(t0);
@@ -120,6 +127,57 @@ float4 PSMain(PSInput input) : SV_TARGET
 	return float4(worldNormal, Material.x);
 }
 )";
+
+	// Resample the engine's render-resolution, jitter-rasterised motion vectors
+	// and depth up to display resolution for the post-upscale uplift.
+	const char* const kUpliftGuideSource = R"(
+Texture2D<float2> EngineMotion : register(t0);
+Texture2D<float>  EngineDepth  : register(t1);
+
+cbuffer Params : register(b0)
+{
+	float4 Extent;        // xy = render extent, zw = output (display) extent
+	float4 SampleOffset;  // xy = pixel offset applied when reading the raster
+};
+
+struct PSInput
+{
+	float4 position : SV_POSITION;
+};
+
+struct PSOutput
+{
+	float2 motion : SV_TARGET0;
+	float  depth  : SV_TARGET1;
+};
+
+PSInput VSMain(uint vertexId : SV_VertexID)
+{
+	static const float2 positions[3] = {
+		float2(-1.0f,  3.0f),
+		float2(-1.0f, -1.0f),
+		float2( 3.0f, -1.0f)
+	};
+	PSInput output;
+	output.position = float4(positions[vertexId], 0.0f, 1.0f);
+	return output;
+}
+
+PSOutput PSMain(PSInput input)
+{
+	// This output pixel's centre is an UNJITTERED display-space position. The
+	// raster it came from was drawn jittered, so its feature sits at that
+	// position plus SampleOffset -- read there, not at the naive scaled centre.
+	const float2 source = (input.position.xy) * Extent.xy / Extent.zw + SampleOffset.xy;
+	const int2   p = clamp(int2(floor(source)), int2(0, 0), int2(Extent.xy) - 1);
+
+	PSOutput output;
+	// The engine's motion is normalised screen space; NGX wants display pixels.
+	output.motion = EngineMotion.Load(int3(p, 0)) * Extent.zw;
+	output.depth = EngineDepth.Load(int3(p, 0));
+	return output;
+}
+)";
 }
 
 void D3D12NeuralGBuffer::Reset()
@@ -129,9 +187,12 @@ void D3D12NeuralGBuffer::Reset()
 	pipelineState = nullptr;
 	srvHeap = nullptr;
 	rtvHeap = nullptr;
+	upliftGuidePipeline = nullptr;
 	normalRoughness = nullptr;
 	albedo = nullptr;
 	specularAlbedo = nullptr;
+	upliftMotion = nullptr;
+	upliftDepth = nullptr;
 	currentWidth = 0;
 	currentHeight = 0;
 	constantsCleared = false;
@@ -156,7 +217,8 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		// ---- root signature: one SRV table (depth) + inline constants --------
 		D3D12_DESCRIPTOR_RANGE range{};
 		range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		range.NumDescriptors = kSRVCount;
+		// Two per pass (t0, t1); the normals pass ignores t1.
+		range.NumDescriptors = 2;
 		range.BaseShaderRegister = 0;
 		range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
@@ -201,6 +263,17 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		psoDesc.SampleDesc.Count = 1;
 		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(pipelineState.put())));
 
+		auto guideVertexShader = CompileShader(kUpliftGuideSource, "VSMain", "vs_5_0");
+		auto guidePixelShader = CompileShader(kUpliftGuideSource, "PSMain", "ps_5_0");
+
+		auto guidePsoDesc = psoDesc;
+		guidePsoDesc.VS = { guideVertexShader->GetBufferPointer(), guideVertexShader->GetBufferSize() };
+		guidePsoDesc.PS = { guidePixelShader->GetBufferPointer(), guidePixelShader->GetBufferSize() };
+		guidePsoDesc.NumRenderTargets = 2;
+		guidePsoDesc.RTVFormats[0] = DXGI_FORMAT_R16G16_FLOAT;
+		guidePsoDesc.RTVFormats[1] = DXGI_FORMAT_R32_FLOAT;
+		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&guidePsoDesc, IID_PPV_ARGS(upliftGuidePipeline.put())));
+
 		// ---- guide textures ---------------------------------------------------
 		const auto createTarget = [&](winrt::com_ptr<ID3D12Resource>& a_out, DXGI_FORMAT a_format) {
 			D3D12_HEAP_PROPERTIES heap{};
@@ -226,6 +299,8 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		createTarget(normalRoughness, DXGI_FORMAT_R16G16B16A16_FLOAT);
 		createTarget(albedo, DXGI_FORMAT_R8G8B8A8_UNORM);
 		createTarget(specularAlbedo, DXGI_FORMAT_R8G8B8A8_UNORM);
+		createTarget(upliftMotion, DXGI_FORMAT_R16G16_FLOAT);
+		createTarget(upliftDepth, DXGI_FORMAT_R32_FLOAT);
 
 		// ---- descriptor heaps -------------------------------------------------
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc{};
@@ -246,6 +321,10 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		a_device->CreateRenderTargetView(albedo.get(), nullptr, rtv);
 		rtv.ptr += rtvIncrement;
 		a_device->CreateRenderTargetView(specularAlbedo.get(), nullptr, rtv);
+		rtv.ptr += rtvIncrement;
+		a_device->CreateRenderTargetView(upliftMotion.get(), nullptr, rtv);
+		rtv.ptr += rtvIncrement;
+		a_device->CreateRenderTargetView(upliftDepth.get(), nullptr, rtv);
 	} catch (const std::exception& e) {
 		logger::warn("[NeuralGBuffer] Resource creation failed ({}x{}): {}", a_width, a_height, e.what());
 		const auto failedWidth = currentWidth;
@@ -323,8 +402,13 @@ bool D3D12NeuralGBuffer::Generate(
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Texture2D.MipLevels = 1;
-	auto srvCpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
-	srvCpu.ptr += static_cast<SIZE_T>(kSRVDepth) * a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	const auto srvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	auto       srvCpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
+	srvCpu.ptr += static_cast<SIZE_T>(kSRVNormalsDepth) * srvIncrement;
+	a_device->CreateShaderResourceView(a_depth, &srvDesc, srvCpu);
+	// The root signature's table is two SRVs wide; give t1 a valid descriptor
+	// even though this pass never reads it.
+	srvCpu.ptr += srvIncrement;
 	a_device->CreateShaderResourceView(a_depth, &srvDesc, srvCpu);
 
 	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -371,6 +455,96 @@ bool D3D12NeuralGBuffer::Generate(
 	a_commandList->DrawInstanced(3, 1, 0, 0);
 
 	Transition(a_commandList, normalRoughness.get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, a_depth, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+	return true;
+}
+
+bool D3D12NeuralGBuffer::GenerateUpliftGuides(
+	ID3D12Device*              a_device,
+	ID3D12GraphicsCommandList* a_commandList,
+	ID3D12Resource*            a_motionVectors,
+	ID3D12Resource*            a_depth,
+	std::uint32_t              a_renderWidth,
+	std::uint32_t              a_renderHeight,
+	std::uint32_t              a_displayWidth,
+	std::uint32_t              a_displayHeight,
+	DirectX::XMFLOAT2          a_jitterPixels)
+{
+	if (!a_device || !a_commandList || !a_motionVectors || !a_depth ||
+		a_renderWidth == 0 || a_renderHeight == 0 || a_displayWidth == 0 || a_displayHeight == 0) {
+		return false;
+	}
+	if (!EnsureResources(a_device, a_displayWidth, a_displayHeight) || !upliftGuidePipeline) {
+		return false;
+	}
+
+	struct Params
+	{
+		float extent[4];        // render w/h, display w/h
+		float sampleOffset[4];  // pixel offset, then padding
+	} params{};
+
+	params.extent[0] = static_cast<float>(a_renderWidth);
+	params.extent[1] = static_cast<float>(a_renderHeight);
+	params.extent[2] = static_cast<float>(a_displayWidth);
+	params.extent[3] = static_cast<float>(a_displayHeight);
+	// The raster displaces features by the negation of the engine's jitter, so
+	// that is where an unjittered output pixel has to look to find its own data.
+	params.sampleOffset[0] = -a_jitterPixels.x;
+	params.sampleOffset[1] = -a_jitterPixels.y;
+
+	Transition(a_commandList, a_motionVectors, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(a_commandList, a_depth, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(a_commandList, upliftMotion.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	Transition(a_commandList, upliftDepth.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+	const auto srvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	auto       srvCpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
+	srvCpu.ptr += static_cast<SIZE_T>(kSRVUpliftMotion) * srvIncrement;
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC motionSrv{};
+	motionSrv.Format = DXGI_FORMAT_R16G16_FLOAT;
+	motionSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	motionSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	motionSrv.Texture2D.MipLevels = 1;
+	a_device->CreateShaderResourceView(a_motionVectors, &motionSrv, srvCpu);
+
+	srvCpu.ptr += srvIncrement;
+	D3D12_SHADER_RESOURCE_VIEW_DESC depthSrv{};
+	depthSrv.Format = DXGI_FORMAT_R32_FLOAT;
+	depthSrv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	depthSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	depthSrv.Texture2D.MipLevels = 1;
+	a_device->CreateShaderResourceView(a_depth, &depthSrv, srvCpu);
+
+	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	auto       rtvBase = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+	D3D12_CPU_DESCRIPTOR_HANDLE guideRtvs[2]{};
+	guideRtvs[0] = rtvBase;
+	guideRtvs[0].ptr += static_cast<SIZE_T>(kRTVUpliftMotion) * rtvIncrement;
+	guideRtvs[1] = rtvBase;
+	guideRtvs[1].ptr += static_cast<SIZE_T>(kRTVUpliftDepth) * rtvIncrement;
+	a_commandList->OMSetRenderTargets(2, guideRtvs, FALSE, nullptr);
+
+	ID3D12DescriptorHeap* heaps[] = { srvHeap.get() };
+	a_commandList->SetDescriptorHeaps(static_cast<UINT>(std::size(heaps)), heaps);
+	a_commandList->SetGraphicsRootSignature(rootSignature.get());
+	a_commandList->SetPipelineState(upliftGuidePipeline.get());
+	auto srvTable = srvHeap->GetGPUDescriptorHandleForHeapStart();
+	srvTable.ptr += static_cast<UINT64>(kSRVUpliftMotion) * srvIncrement;
+	a_commandList->SetGraphicsRootDescriptorTable(0, srvTable);
+	a_commandList->SetGraphicsRoot32BitConstants(1, 8, &params, 0);
+	a_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(a_displayWidth), static_cast<float>(a_displayHeight), 0.0f, 1.0f };
+	const D3D12_RECT     scissor{ 0, 0, static_cast<LONG>(a_displayWidth), static_cast<LONG>(a_displayHeight) };
+	a_commandList->RSSetViewports(1, &viewport);
+	a_commandList->RSSetScissorRects(1, &scissor);
+	a_commandList->DrawInstanced(3, 1, 0, 0);
+
+	Transition(a_commandList, upliftMotion.get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, upliftDepth.get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, a_motionVectors, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
 	Transition(a_commandList, a_depth, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
 	return true;
 }
