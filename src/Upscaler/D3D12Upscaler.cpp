@@ -520,6 +520,11 @@ void D3D12Upscaler::Evaluate()
 	}
 
 	if (!active) {
+		// The uplift did not run, so the present and DLSS-G must go back to the
+		// upscaler's own output. Leaving this set would hand them last active
+		// frame's image while a menu or loading screen is up.
+		neuralColorReady = nullptr;
+		neuralRenderingActive = false;
 		// Nothing to do; make sure the frame is presented at full resolution and
 		// DLSS-G is disabled (so the present doesn't tag stale resources).
 		{
@@ -811,6 +816,14 @@ void D3D12Upscaler::Evaluate()
 		// Uplift the resolved image. This is the ordering that actually shows on
 		// screen, because nothing temporal runs after it to average it away.
 		if (ok && nrWanted && nrAfterUpscale) {
+			// The upscaler wrote colorOutput moments ago on this same list and
+			// Streamline leaves it in COMMON, so nothing orders that write against
+			// the uplift's read of it. Without this the uplift can sample a
+			// half-written or stale image and the frame flickers between the
+			// uplifted and un-uplifted result.
+			const auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+			commandList->ResourceBarrier(1, &uavBarrier);
+
 			nrParameters.color = colorOutput->resource12.get();
 			nrParameters.output = neuralColor.get();
 			if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
@@ -865,6 +878,23 @@ void D3D12Upscaler::Evaluate()
 			// disables it here.)
 			if constexpr (Upscaling::kFrameGenExperiment) {
 				ConfigureFrameGeneration(renderSize.x, renderSize.y, displaySize.x, displaySize.y);
+			}
+		}
+
+		// The uplift is only worth anything if it runs on EVERY frame -- if it runs
+		// on some and not others the image alternates and reads as a flicker. Count
+		// both and report the ratio periodically, so "is it actually on?" is a
+		// question the log answers rather than the eye.
+		if (neuralRendering) {
+			++neuralFramesTotal;
+			if (neuralRenderingActive) {
+				++neuralFramesActive;
+			}
+			if ((neuralFramesTotal % 600) == 0) {
+				logger::info("[DLSS-NR] Uplift ran on {} of the last {} frames (order={})",
+					neuralFramesActive, neuralFramesTotal, nrAfterUpscale ? "after" : "before");
+				neuralFramesTotal = 0;
+				neuralFramesActive = 0;
 			}
 		}
 
