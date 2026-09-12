@@ -1,6 +1,7 @@
 # fo4test → SkyrimUpscaler 移植ロードマップ
 
-Fallout 4 用アップスケーラー [`highpower1/fo4test`](https://github.com/highpower1/fo4test)
+Fallout 4 用アップスケーラー [`jarari/fo4test`](https://github.com/jarari/fo4test)（大本。
+ローカルクローンは fork の `highpower1/fo4test`＝同一コード）
 を、**Skyrim SE 1.5.97 / AE 1.6.x**（VR・GOG は対象外）で動作する SKSE プラグインへ
 リバースエンジニアリング移植するための工程表。
 

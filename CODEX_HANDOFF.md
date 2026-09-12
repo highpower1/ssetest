@@ -1,7 +1,8 @@
 # SkyrimUpscaler — Handoff Spec (for Codex / next engineer)
 
-Reverse‑engineered port of `github.com/highpower1/fo4test` (a Fallout 4 FSR/DLSS/DLSS‑G
-upscaler) into an **SKSE plugin for Skyrim Special Edition / Anniversary Edition**.
+Reverse‑engineered port of **`github.com/jarari/fo4test`** (the original Fallout 4 FSR/DLSS/DLSS‑G
+upscaler; we cloned the `highpower1/fo4test` fork locally at `C:\Claude\fo4test` — same code)
+into an **SKSE plugin for Skyrim Special Edition / Anniversary Edition**.
 This document is a self‑contained brief so you can continue **without** re‑deriving the
 architecture. Read it top to bottom once.
 

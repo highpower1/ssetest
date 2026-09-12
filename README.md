@@ -1,6 +1,7 @@
 # SkyrimUpscaler
 
-Fallout 4 用アップスケーラー [`highpower1/fo4test`](https://github.com/highpower1/fo4test)
+Fallout 4 用アップスケーラー [`jarari/fo4test`](https://github.com/jarari/fo4test)（大本。
+ローカルには fork の `highpower1/fo4test` をクローン＝同一コード）
 を **Skyrim Special Edition / Anniversary Edition** 向けにリバースエンジニアリング
 移植する SKSE プラグイン。
 
