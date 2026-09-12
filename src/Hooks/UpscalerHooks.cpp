@@ -4,6 +4,7 @@
 
 #include "Game/Util.h"
 #include "Game/Renderer.h"
+#include "Neural/NeuralRendering.h"
 #include "Render/Streamline.h"
 #include "Upscaler/D3D12Upscaler.h"
 #include "Upscaler/Upscaling.h"
@@ -162,6 +163,10 @@ namespace
 		static void thunk(std::int64_t a_renderer, int a_unk)
 		{
 			const auto n = ++g_drawFires;
+			// Neural rendering (B): external RenoDX-style modules get the scene
+			// colour BEFORE upscaling, while it is still hud-less and at render
+			// resolution -- so a module's output is what DLSS/FSR then resolves.
+			NeuralRendering::GetSingleton()->OnFrame();
 			// Approach 1 eval: process the main color through the D3D12 interop
 			// (increment 2a = identity round-trip to validate sync).
 			D3D12Upscaler::GetSingleton()->Evaluate();

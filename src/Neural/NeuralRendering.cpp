@@ -3,6 +3,9 @@
 #include "Neural/NeuralRendering.h"
 
 #include "Game/Renderer.h"
+#include "Render/Streamline.h"
+#include "Upscaler/D3D12Upscaler.h"
+#include "Upscaler/Upscaling.h"
 
 #include <system_error>
 
@@ -45,20 +48,27 @@ void NeuralRendering::Initialize()
 
 	if (settings.enableExternalModules) {
 		LoadExternalModules();
+	} else {
+		logger::info("[Neural] External neural modules disabled in settings");
 	}
 
+	// (A) DLSS Ray Reconstruction is requested from Streamline itself
+	// (sl::kFeatureDLSS_RR is now in the D3D12 featuresToLoad list); availability
+	// is reported by Streamline::CheckFeatures into featureDLSSD/dlssdStatus and
+	// surfaced in the menu. Nothing to do here beyond logging intent.
 	if (settings.enableRayReconstruction) {
-		// (A) DLSS Ray Reconstruction.
-		//
-		// PORTING NOTE: RR is requested through the Streamline wrapper by
-		// selecting the DLSS-D (ray reconstruction) preset instead of plain
-		// DLSS super resolution, and by tagging the additional guide buffers
-		// (albedo, normals/roughness, specular hit distance). The Streamline
-		// runtime DLLs are already bundled (sl.dlss_d.dll / nvngx_dlssd.dll /
-		// nvngx_dlssnr.dll). Wire this to Streamline::GetSingleton() once the
-		// render backend is compiled in. See PORTING.md section "DLSS-RR".
-		logger::info("[Neural] DLSS Ray Reconstruction requested (evaluation pending Streamline backend)");
+		logger::info("[Neural] DLSS Ray Reconstruction enabled in settings");
 	}
+}
+
+std::string NeuralRendering::GetModuleName(std::size_t a_index) const
+{
+	return a_index < loadedModules.size() ? loadedModules[a_index].name : std::string{};
+}
+
+std::string NeuralRendering::GetModuleVersion(std::size_t a_index) const
+{
+	return a_index < loadedModules.size() ? loadedModules[a_index].version : std::string{};
 }
 
 void NeuralRendering::LoadExternalModules()
@@ -67,7 +77,11 @@ void NeuralRendering::LoadExternalModules()
 
 	std::error_code ec;
 	if (!std::filesystem::exists(dir, ec)) {
-		logger::info("[Neural] No neural module directory at {} (skipping external modules)", dir.string());
+		// Create it so players have somewhere obvious to drop a module.
+		std::error_code createEc;
+		std::filesystem::create_directories(dir, createEc);
+		logger::info("[Neural] No neural module directory at {} ({})", dir.string(),
+			createEc ? "could not create it" : "created it; drop neural DLLs here");
 		return;
 	}
 
@@ -96,6 +110,7 @@ void NeuralRendering::LoadExternalModules()
 			GetProcAddress(handle, kGetModuleExport));
 
 		if (!getModule) {
+			++rejectedModules;
 			if (GetProcAddress(handle, kReShadeExport)) {
 				logger::warn(
 					"[Neural] '{}' looks like a ReShade/RenoDX addon (exports {}). Hosting a raw "
@@ -108,10 +123,16 @@ void NeuralRendering::LoadExternalModules()
 			continue;
 		}
 
-		const SkyrimUpscalerNeuralModuleV1* mod = getModule();
+		const SkyrimUpscalerNeuralModuleV1* mod = nullptr;
+		try {
+			mod = getModule();
+		} catch (...) {
+			mod = nullptr;
+		}
 		if (!mod || mod->abiVersion != SKYRIM_UPSCALER_NEURAL_ABI_V1 ||
 			mod->structSize != sizeof(SkyrimUpscalerNeuralModuleV1)) {
 			logger::warn("[Neural] '{}' returned an incompatible module descriptor; ignoring", path.filename().string());
+			++rejectedModules;
 			FreeLibrary(handle);
 			continue;
 		}
@@ -120,43 +141,123 @@ void NeuralRendering::LoadExternalModules()
 		loaded.handle = handle;
 		loaded.module = mod;
 		loaded.path = path.wstring();
+		loaded.name = mod->name ? mod->name : path.filename().string();
+		loaded.version = mod->version ? mod->version : "?";
 
-		if (mod->Init) {
-			SkyrimUpscalerNeuralHostInfo host{};
-			host.structSize = sizeof(host);
-			host.abiVersion = SKYRIM_UPSCALER_NEURAL_ABI_V1;
-			host.d3d11Device = Game::GetD3D11Device();
-			host.d3d11Context = Game::GetD3D11Context();
-			host.d3d12Device = nullptr;  // populated once the DX12 proxy exists
-			const auto pluginDir = GetPluginDirectory().wstring();
-			host.pluginDirectory = pluginDir.c_str();
-
-			const int rc = mod->Init(&host);
-			if (rc != 0) {
-				logger::warn("[Neural] Module '{}' Init() failed with code {}; unloading",
-					mod->name ? mod->name : "?", rc);
-				FreeLibrary(handle);
-				continue;
-			}
-			loaded.initialized = true;
-		}
-
-		logger::info("[Neural] Loaded neural module '{}' v{}",
-			mod->name ? mod->name : path.filename().string().c_str(),
-			mod->version ? mod->version : "?");
+		logger::info("[Neural] Discovered neural module '{}' v{} ({})",
+			loaded.name, loaded.version, path.filename().string());
 		loadedModules.push_back(std::move(loaded));
 	}
 
-	logger::info("[Neural] {} external neural module(s) active", loadedModules.size());
+	logger::info("[Neural] {} external neural module(s) discovered, {} rejected", loadedModules.size(), rejectedModules);
+}
+
+bool NeuralRendering::InitializeModules()
+{
+	if (modulesInitialized || loadedModules.empty()) {
+		modulesInitialized = true;
+		return true;
+	}
+
+	auto* device11 = Game::GetD3D11Device();
+	auto* context11 = Game::GetD3D11Context();
+	if (!device11 || !context11) {
+		return false;  // try again next frame
+	}
+
+	// May legitimately be null when the D3D12 proxy is off; modules must cope.
+	auto* device12 = D3D12Upscaler::GetSingleton()->GetD3D12Device();
+
+	const auto pluginDir = GetPluginDirectory().wstring();
+
+	for (auto& loaded : loadedModules) {
+		if (loaded.initialized || loaded.failed || !loaded.module) {
+			continue;
+		}
+		if (!loaded.module->Init) {
+			loaded.initialized = true;
+			continue;
+		}
+
+		SkyrimUpscalerNeuralHostInfo host{};
+		host.structSize = sizeof(host);
+		host.abiVersion = SKYRIM_UPSCALER_NEURAL_ABI_V1;
+		host.d3d11Device = device11;
+		host.d3d11Context = context11;
+		host.d3d12Device = device12;
+		host.pluginDirectory = pluginDir.c_str();
+
+		int rc = -1;
+		try {
+			rc = loaded.module->Init(&host);
+		} catch (...) {
+			logger::error("[Neural] Module '{}' threw from Init(); disabling it", loaded.name);
+			loaded.failed = true;
+			continue;
+		}
+
+		if (rc != 0) {
+			logger::warn("[Neural] Module '{}' Init() failed with code {}; disabling it", loaded.name, rc);
+			loaded.failed = true;
+			continue;
+		}
+
+		loaded.initialized = true;
+		logger::info("[Neural] Module '{}' v{} initialized (d3d12Device={})",
+			loaded.name, loaded.version, static_cast<const void*>(device12));
+	}
+
+	modulesInitialized = true;
+	return true;
+}
+
+bool NeuralRendering::OnFrame()
+{
+	if (!initialized || !settings.enableExternalModules || loadedModules.empty()) {
+		return false;
+	}
+
+	if (!modulesInitialized && !InitializeModules()) {
+		return false;
+	}
+
+	auto* color = Game::GetRenderTargetTexture(RE::RENDER_TARGET::kMAIN);
+	if (!color) {
+		return false;
+	}
+
+	const auto* up = Upscaling::GetSingleton();
+
+	SkyrimUpscalerNeuralFrameInfo frame{};
+	frame.structSize = sizeof(frame);
+	frame.frameIndex = frameIndex++;
+	frame.renderWidth = up->osdRenderSize.x;
+	frame.renderHeight = up->osdRenderSize.y;
+	frame.displayWidth = up->osdNativeSize.x;
+	frame.displayHeight = up->osdNativeSize.y;
+	frame.color = color;
+	frame.depth = Game::GetRenderTargetTexture(RE::RENDER_TARGET::kSAO_CAMERAZ);
+	frame.motionVectors = Game::GetRenderTargetTexture(RE::RENDER_TARGET::kMOTION_VECTOR);
+
+	return EvaluateExternalModules(frame);
 }
 
 bool NeuralRendering::EvaluateExternalModules(const SkyrimUpscalerNeuralFrameInfo& a_frame)
 {
 	bool ran = false;
 	for (auto& loaded : loadedModules) {
-		if (loaded.module && loaded.module->Evaluate) {
+		if (loaded.failed || !loaded.initialized || !loaded.module || !loaded.module->Evaluate) {
+			continue;
+		}
+		// A third-party DLL runs inside the game's render hook. An exception
+		// escaping here would unwind through engine code, so contain it and
+		// permanently drop the offending module instead.
+		try {
 			loaded.module->Evaluate(&a_frame);
 			ran = true;
+		} catch (...) {
+			logger::error("[Neural] Module '{}' threw from Evaluate(); disabling it for this session", loaded.name);
+			loaded.failed = true;
 		}
 	}
 	return ran;
@@ -174,4 +275,6 @@ void NeuralRendering::Shutdown()
 	}
 	loadedModules.clear();
 	initialized = false;
+	modulesInitialized = false;
+	rejectedModules = 0;
 }

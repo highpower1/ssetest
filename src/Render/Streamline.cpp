@@ -195,9 +195,14 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 
 	sl::Preferences pref;
 
+	// sl::kFeatureDLSS_RR is the Ray Reconstruction (DLSS-D) plugin. Requesting it
+	// here is what makes sl.dlss_d.dll load at all -- without it every log line
+	// reads "Ignoring plugin 'sl.dlss_d' since it was not requested by the host".
+	// Loading it is harmless when the GPU/driver cannot run it: CheckFeatures then
+	// reports it unavailable and the menu toggle stays disabled.
 	sl::Feature d3d11FeaturesToLoad[] = { sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
-	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
-	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
+	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
+	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
 	if (a_renderAPI == sl::RenderAPI::eD3D12) {
 		if constexpr (Upscaling::kEnableDLSSG) {
 			pref.featuresToLoad = d3d12FeaturesToLoad;
@@ -224,7 +229,7 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 		pref.pathsToPlugins = pluginPaths;
 		pref.numPathsToPlugins = _countof(pluginPaths);
 
-		for (const auto& runtimeDependency : { L"sl.imgui.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
+		for (const auto& runtimeDependency : { L"sl.imgui.dll", L"sl.dlss.dll", L"nvngx_dlss.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.dlss_d.dll", L"nvngx_dlssd.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
 			const auto dependencyPath = std::filesystem::path(interposerDirectory) / runtimeDependency;
 			logger::info("[Streamline] Runtime dependency {} {}", dependencyPath.string(), std::filesystem::exists(dependencyPath) ? "found" : "missing");
 		}
@@ -329,12 +334,18 @@ void Streamline::SetSwapChain(IDXGISwapChain* a_swapChain)
 	}
 }
 
-void Streamline::CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bool& a_available, std::string_view a_name)
+void Streamline::CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bool& a_available, std::string_view a_name, std::string* a_status)
 {
 	a_available = false;
+	const auto setStatus = [a_status](std::string a_text) {
+		if (a_status) {
+			*a_status = std::move(a_text);
+		}
+	};
 
 	if (!slIsFeatureLoaded || !slIsFeatureSupported || !slGetFeatureRequirements || !a_adapter) {
 		logger::warn("[Streamline] Cannot check {} feature: Streamline is not fully initialized", a_name);
+		setStatus("Streamline not initialized");
 		return;
 	}
 
@@ -348,6 +359,7 @@ void Streamline::CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bo
 	bool loaded = false;
 	if (SL_FAILED(result, slIsFeatureLoaded(a_feature, loaded))) {
 		logger::info("[Streamline] {} feature loaded check failed: {}", a_name, magic_enum::enum_name(result));
+		setStatus(std::string("load check failed: ").append(magic_enum::enum_name(result)));
 		return;
 	}
 
@@ -355,6 +367,7 @@ void Streamline::CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bo
 		const auto support = slIsFeatureSupported(a_feature, adapterInfo);
 		a_available = support == sl::Result::eOk;
 		logger::info("[Streamline] {} feature {} available ({})", a_name, a_available ? "is" : "is not", magic_enum::enum_name(support));
+		setStatus(a_available ? std::string("supported") : std::string(magic_enum::enum_name(support)));
 		return;
 	}
 
@@ -362,10 +375,12 @@ void Streamline::CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bo
 	sl::Result result = slGetFeatureRequirements(a_feature, featureRequirements);
 	if (result != sl::Result::eOk) {
 		logger::info("[Streamline] {} feature failed to load due to: {}", a_name, magic_enum::enum_name(result));
+		setStatus(std::string("plugin not loaded: ").append(magic_enum::enum_name(result)));
 		return;
 	}
 
 	logger::info("[Streamline] {} feature is not loaded", a_name);
+	setStatus("plugin not loaded");
 }
 
 void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
@@ -382,6 +397,13 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 	} else {
 		featureDLSSG = false;
 		logger::info("[Streamline] DLSS-G skipped: unavailable for this render mode or disabled by safety gate");
+	}
+	if (UsesD3D12()) {
+		CheckFeature(sl::kFeatureDLSS_RR, a_adapter, featureDLSSD, "DLSS-RR", &dlssdStatus);
+	} else {
+		featureDLSSD = false;
+		dlssdStatus = "requires the D3D12 proxy path";
+		logger::info("[Streamline] DLSS-RR skipped: ray reconstruction is D3D12-only");
 	}
 	CheckFeature(sl::kFeatureReflex, a_adapter, featureReflex, "Reflex");
 	CheckFeature(sl::kFeatureNIS, a_adapter, featureNIS, "NIS");
@@ -409,6 +431,21 @@ void Streamline::PostDevice()
 	if (featureDLSSG) {
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGGetState", (void*&)slDLSSGGetState);
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGSetOptions", (void*&)slDLSSGSetOptions);
+	}
+
+	if (featureDLSSD) {
+		slGetFeatureFunction(sl::kFeatureDLSS_RR, "slDLSSDGetOptimalSettings", (void*&)slDLSSDGetOptimalSettings);
+		slGetFeatureFunction(sl::kFeatureDLSS_RR, "slDLSSDGetState", (void*&)slDLSSDGetState);
+		slGetFeatureFunction(sl::kFeatureDLSS_RR, "slDLSSDSetOptions", (void*&)slDLSSDSetOptions);
+
+		// Report the model's VRAM footprint up front -- RR is far heavier than SR,
+		// and on an 8 GB card it is the difference between working and thrashing.
+		if (slDLSSDGetState) {
+			sl::DLSSDState state{};
+			if (SL_SUCCEEDED(result, slDLSSDGetState(viewport, state))) {
+				logger::info("[Streamline] DLSS-RR estimated VRAM usage: {} MiB", state.estimatedVRAMUsageInBytes / (1024ull * 1024ull));
+			}
+		}
 	}
 
 	if (featureReflex) {

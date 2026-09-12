@@ -4,6 +4,7 @@
 
 #include "Settings/Settings.h"
 #include "Neural/NeuralRendering.h"
+#include "Render/Streamline.h"
 #include "Upscaler/Upscaling.h"
 
 #include "SKSEMenuFramework.h"
@@ -241,14 +242,40 @@ namespace
 		ImGuiMCP::EndDisabled();
 
 		ImGuiMCP::SeparatorText("Neural Rendering");
-		changed |= CheckboxSetting(
-			"DLSS Ray Reconstruction",
-			settings.neuralRayReconstruction,
-			"Enables the DLSS-D neural denoiser (Ray Reconstruction). Requires an RTX GPU.");
-		changed |= CheckboxSetting(
-			"External Neural Modules",
-			settings.neuralExternalModules,
-			"Loads RenoDX-style DLLs from Data/SKSE/Plugins/SkyrimUpscaler/Neural/. Restart to apply.");
+		{
+			auto*      sl = Streamline::GetSingleton();
+			auto*      neural = NeuralRendering::GetSingleton();
+			const bool rrAvailable = sl->featureDLSSD;
+
+			ImGuiMCP::BeginDisabled(!rrAvailable);
+			changed |= CheckboxSetting(
+				"DLSS Ray Reconstruction",
+				settings.neuralRayReconstruction,
+				"Runs the DLSS-D neural denoiser instead of plain super resolution. "
+				"Requires an RTX GPU, the D3D12 path, and nvngx_dlssd.dll in the Streamline folder.");
+			ImGuiMCP::EndDisabled();
+
+			if (rrAvailable) {
+				ImGuiMCP::TextDisabled("Ray Reconstruction: available");
+			} else {
+				ImGuiMCP::TextDisabled("Ray Reconstruction unavailable (%s)", sl->dlssdStatus.c_str());
+			}
+
+			changed |= CheckboxSetting(
+				"External Neural Modules",
+				settings.neuralExternalModules,
+				"Loads RenoDX-style DLLs from Data/SKSE/Plugins/SkyrimUpscaler/Neural/. Restart to apply.");
+
+			const auto moduleCount = neural->GetModuleCount();
+			if (moduleCount == 0) {
+				ImGuiMCP::TextDisabled("No external modules loaded%s",
+					neural->GetRejectedModuleCount() != 0 ? " (some DLLs were rejected -- see the log)" : "");
+			} else {
+				for (std::size_t i = 0; i < moduleCount; ++i) {
+					ImGuiMCP::TextDisabled("  %s v%s", neural->GetModuleName(i).c_str(), neural->GetModuleVersion(i).c_str());
+				}
+			}
+		}
 
 		// ---- FPS overlay: a plain on/off, with the detail level beside it. Both
 		// live in the single persisted `osdMode` (0 = off, 1 = compact, 2 = detailed).

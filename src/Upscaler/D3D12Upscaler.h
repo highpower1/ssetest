@@ -45,6 +45,9 @@ public:
 
 	[[nodiscard]] bool IsReady() const { return ready; }
 	[[nodiscard]] bool IsDLSSAvailable() const { return dlssAvailable; }
+	// The private interop device, or null before Init() succeeds. Handed to
+	// external neural modules so a D3D12 module can share our device.
+	[[nodiscard]] ID3D12Device* GetD3D12Device() const { return d3d12Device.get(); }
 	// Active = a usable upscaler is selected (DLSS needs DLSS available; FSR does
 	// not) AND we're in gameplay (not blocked by a menu/logo/loading screen).
 	// Drives whether the jitter hook injects a (non-zero) Halton offset + DRS.

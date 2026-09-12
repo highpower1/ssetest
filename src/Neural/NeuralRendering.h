@@ -3,6 +3,7 @@
 #include <d3d11.h>
 #include <d3d12.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -101,19 +102,31 @@ public:
 
 	Settings settings;
 
-	// Discover + LoadLibrary + validate + Init all neural DLLs in the Neural
-	// folder, and prepare the DLSS-RR request. Safe to call once device is up.
+	// Discover + LoadLibrary + validate all neural DLLs in the Neural folder.
+	// Module Init() is deferred to the first frame (see OnFrame) so the D3D11 and
+	// D3D12 devices handed to a module are both live.
 	void Initialize();
 
+	// Called once per frame from the pre-UI render hook (Hook_MainDrawWorld), i.e.
+	// after the scene is rendered and before the HUD is drawn -- the point a
+	// RenoDX-style tone-mapping / neural post-process module wants. Runs every
+	// loaded external module (B). Returns true if any module ran.
+	bool OnFrame();
+
 	// Run every loaded external module for this frame (B). Returns true if any
-	// module ran. The DLSS-RR evaluation (A) is driven by the Streamline
-	// backend; see EnableRayReconstruction().
+	// module ran. The DLSS-RR evaluation (A) is driven by the Streamline backend.
 	bool EvaluateExternalModules(const SkyrimUpscalerNeuralFrameInfo& a_frame);
 
 	// (A) Whether DLSS Ray Reconstruction should be requested this frame.
 	bool WantsRayReconstruction() const { return settings.enableRayReconstruction; }
 
 	void Shutdown();
+
+	// ---- status, for the SMF menu ---------------------------------------
+	[[nodiscard]] std::size_t GetModuleCount() const { return loadedModules.size(); }
+	[[nodiscard]] std::string GetModuleName(std::size_t a_index) const;
+	[[nodiscard]] std::string GetModuleVersion(std::size_t a_index) const;
+	[[nodiscard]] std::uint32_t GetRejectedModuleCount() const { return rejectedModules; }
 
 	[[nodiscard]] std::filesystem::path GetPluginDirectory() const;
 	[[nodiscard]] std::filesystem::path GetNeuralDirectory() const;
@@ -124,11 +137,20 @@ private:
 		HMODULE                             handle = nullptr;
 		const SkyrimUpscalerNeuralModuleV1* module = nullptr;
 		std::wstring                        path;
+		std::string                         name;
+		std::string                         version;
 		bool                                initialized = false;
+		bool                                failed = false;  // Init() failed / Evaluate() faulted; skip it
 	};
 
 	void LoadExternalModules();
+	// Deferred module Init(); returns true once every module has been given its
+	// chance (successfully or not).
+	bool InitializeModules();
 
 	std::vector<LoadedModule> loadedModules;
 	bool                      initialized = false;
+	bool                      modulesInitialized = false;
+	std::uint32_t             rejectedModules = 0;
+	std::uint32_t             frameIndex = 0;
 };

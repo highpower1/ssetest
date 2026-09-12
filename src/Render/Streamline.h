@@ -10,6 +10,7 @@
 #include <sl.h>
 #include <sl_consts.h>
 #include <sl_dlss.h>
+#include <sl_dlss_d.h>
 #include <sl_dlss_g.h>
 #include <sl_nis.h>
 #include <sl_pcl.h>
@@ -20,6 +21,7 @@
 
 #include <limits>
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 using PFun_slSetTag2 = sl::Result(const sl::ViewportHandle& viewport, const sl::ResourceTag* tags, uint32_t numTags, sl::CommandBuffer* cmdBuffer);
@@ -211,6 +213,8 @@ public:
 	sl::RenderAPI initializedRenderAPI = sl::RenderAPI::eD3D11; ///< Streamline RHI used at initialization
 	bool featureDLSS = false;  ///< True if DLSS is available on current GPU
 	bool featureDLSSG = false; ///< True if DLSS Frame Generation is available
+	bool featureDLSSD = false; ///< True if DLSS Ray Reconstruction (DLSS-D) is available
+	std::string dlssdStatus{ "not checked" }; ///< Human-readable DLSS-RR availability reason (for the menu)
 	bool featureNIS = false; ///< True if NVIDIA Image Scaling is available
 	bool featureReflex = false; ///< True if NVIDIA Reflex is available
 	bool featurePCL = false; ///< True if PCL markers are available
@@ -264,6 +268,11 @@ public:
 	PFun_slDLSSGGetState* slDLSSGGetState{};                    ///< Get DLSS-G state
 	PFun_slDLSSGSetOptions* slDLSSGSetOptions{};                ///< Set DLSS-G options
 
+	// DLSS-D (Ray Reconstruction) Specific Functions
+	PFun_slDLSSDGetOptimalSettings* slDLSSDGetOptimalSettings{};  ///< Get optimal DLSS-RR settings
+	PFun_slDLSSDGetState* slDLSSDGetState{};                      ///< Get DLSS-RR state
+	PFun_slDLSSDSetOptions* slDLSSDSetOptions{};                  ///< Set DLSS-RR options
+
 	// Reflex/PCL Specific Functions
 	PFun_slReflexGetState* slReflexGetState{};                  ///< Get Reflex state
 	PFun_slReflexSleep* slReflexSleep{};                        ///< Reflex sleep
@@ -273,7 +282,7 @@ public:
 	PFun_slPCLSetOptions* slPCLSetOptions{};                    ///< Set PCL options
 
 private:
-	void CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bool& a_available, std::string_view a_name);
+	void CheckFeature(sl::Feature a_feature, IDXGIAdapter* a_adapter, bool& a_available, std::string_view a_name, std::string* a_status = nullptr);
 	bool EnsureFrameToken(uint32_t a_frameIndex);
 	bool ApplyNISSharpen(ID3D11Resource* a_inputColor, ID3D11Resource* a_outputColor, ID3D11DeviceContext* a_context, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
 	bool ApplyNISSharpenD3D12(ID3D12Resource* a_inputColor, ID3D12Resource* a_outputColor, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
