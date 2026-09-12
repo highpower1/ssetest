@@ -171,6 +171,7 @@ private:
 	CommandContext commandContexts[kCommandContextCount];
 	winrt::handle commandFenceEvent;
 	winrt::com_ptr<ID3D12Resource> presentOverrideFinalColor;
+	ID3D12Resource* loggedPresentOverrideSeen = nullptr;  // trace only; never dereferenced
 	// Per-backbuffer-index DLSS-G input copies (hud-less color, motion vectors,
 	// depth), created lazily on first use.
 	winrt::com_ptr<ID3D12Resource> dlssgHudless[kDX12FrameCount];

@@ -933,6 +933,16 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 	const bool usePresentOverride = overrideFinalColor != nullptr;
 	presentOverrideFinalColor = nullptr;
 
+	// The other end of the trace in D3D12Upscaler: this says what present really
+	// received, so a mismatch between the two lines localises where the chain
+	// breaks. Logged only when it changes.
+	if (overrideFinalColor != loggedPresentOverrideSeen) {
+		loggedPresentOverrideSeen = overrideFinalColor;
+		logger::info("[DX12SwapChain] Present override received: {} (compositing {})",
+			static_cast<const void*>(overrideFinalColor),
+			usePresentOverride ? "override + UI staging" : "staging only");
+	}
+
 	D3D12_RESOURCE_BARRIER beforeCopy[] = {
 		CD3DX12_RESOURCE_BARRIER::Transition(
 			copySource,

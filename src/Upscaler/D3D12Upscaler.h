@@ -174,6 +174,8 @@ private:
 	// Set for the frames where the uplift ran after the upscaler: present and
 	// DLSS-G read this instead of colorOutput. Null on every other frame.
 	ID3D12Resource* neuralColorReady = nullptr;
+	ID3D12Resource* loggedPresentOverride = nullptr;
+	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
 	uint32_t neuralFramesTotal = 0;
 	uint32_t neuralFramesActive = 0;
 

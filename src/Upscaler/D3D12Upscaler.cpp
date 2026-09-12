@@ -687,6 +687,20 @@ void D3D12Upscaler::Evaluate()
 				GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight);
 		}
 
+		// One line whenever the decision changes, so the log says why the uplift
+		// did or did not run instead of leaving it to be inferred.
+		{
+			const uint32_t decision =
+				(method == 2 ? 1u : 0u) | (neuralRendering ? 2u : 0u) | (neuralColor ? 4u : 0u) |
+				(nrAfterUpscale ? 8u : 0u) | (neuralDebugBypass ? 16u : 0u) | (nrWanted ? 32u : 0u);
+			if (decision != loggedNeuralDecision) {
+				loggedNeuralDecision = decision;
+				logger::info("[DLSS-NR] state: dlssMethod={} enabled={} target={} order={} bypass={} willRun={}",
+					method == 2, neuralRendering, static_cast<bool>(neuralColor),
+					nrAfterUpscale ? "after" : "before", neuralDebugBypass, nrWanted);
+			}
+		}
+
 		if (nrWanted) {
 			const auto nrWidth = nrAfterUpscale ? displayWidth : GetRenderWidth();
 			const auto nrHeight = nrAfterUpscale ? displayHeight : GetRenderHeight();
@@ -910,7 +924,19 @@ void D3D12Upscaler::Evaluate()
 					// Keep the upscaled scene on D3D12 as the final present color,
 					// and clear kMAIN so the game draws UI-only onto black; the proxy
 					// present composites the two (D3D12UIComposite).
-					DX12SwapChain::GetSingleton()->SetPresentOverride(GetHudlessColor12());
+					auto* finalColor = GetHudlessColor12();
+					// Trace which image is actually handed to present. Logged only
+					// when it changes, so it costs nothing per frame but says
+					// plainly whether the uplift's target ever gets this far.
+					if (finalColor != loggedPresentOverride) {
+						loggedPresentOverride = finalColor;
+						logger::info("[DLSS-NR] Present override set to {} ({})",
+							static_cast<const void*>(finalColor),
+							finalColor == neuralColor.get() ? "uplift target" :
+								finalColor == (colorOutput ? colorOutput->resource12.get() : nullptr) ? "upscaler output" :
+								"unknown");
+					}
+					DX12SwapChain::GetSingleton()->SetPresentOverride(finalColor);
 					if (auto* rtv = Game::GetRenderTargetRTV(RE::RENDER_TARGET::kMAIN)) {
 						const float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 						d3d11Context4->ClearRenderTargetView(rtv, black);
