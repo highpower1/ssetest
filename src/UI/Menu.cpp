@@ -250,15 +250,45 @@ namespace
 			settings.neuralExternalModules,
 			"Loads RenoDX-style DLLs from Data/SKSE/Plugins/SkyrimUpscaler/Neural/. Restart to apply.");
 
+		// ---- FPS overlay: a plain on/off, with the detail level beside it. Both
+		// live in the single persisted `osdMode` (0 = off, 1 = compact, 2 = detailed).
+		ImGuiMCP::SeparatorText("On-Screen Display");
+		{
+			// Remembers the chosen detail across an off/on toggle this session.
+			static bool lastDetailed = false;
+			if (settings.osdMode == 2) {
+				lastDetailed = true;
+			} else if (settings.osdMode == 1) {
+				lastDetailed = false;
+			}
+
+			bool osdEnabled = settings.osdMode != 0;
+			if (ImGuiMCP::Checkbox("Show FPS Overlay", &osdEnabled)) {
+				settings.osdMode = osdEnabled ? (lastDetailed ? 2u : 1u) : 0u;
+				changed = true;
+			}
+			ShowHelp(
+				"Live FPS + frame time drawn on screen. With frame generation enabled it also "
+				"shows \"Generated FPS\" -- the real presented rate after DLSS-G, so you can "
+				"see at a glance whether frame generation is actually doubling your frames.");
+
+			ImGuiMCP::BeginDisabled(!osdEnabled);
+			static constexpr std::array osdDetails{ "Compact", "Detailed" };
+			int detail = settings.osdMode == 2 ? 1 : 0;
+			if (ImGuiMCP::Combo("Overlay Detail", &detail, osdDetails.data(), static_cast<int>(osdDetails.size()))) {
+				lastDetailed = detail != 0;
+				if (osdEnabled) {
+					settings.osdMode = lastDetailed ? 2u : 1u;
+				}
+				changed = true;
+			}
+			ShowHelp(
+				"Compact: FPS, frame time and Generated FPS. "
+				"Detailed: also the render->display resolution, VRAM usage and Reflex latency.");
+			ImGuiMCP::EndDisabled();
+		}
+
 		ImGuiMCP::SeparatorText("Diagnostics");
-		static constexpr std::array osdModes{ "Disabled", "Compact", "Detailed" };
-		changed |= ComboSetting(
-			"On-Screen Display (FPS)",
-			settings.osdMode,
-			osdModes,
-			"Overlay with the live FPS and frame time. With frame generation on it also "
-			"shows \"Generated FPS\" -- the actual presented rate after DLSS-G. Detailed "
-			"adds the render->display resolution, VRAM and Reflex latency.");
 		changed |= CheckboxSetting(
 			"Tagged Texture Debug View",
 			settings.taggedTextureDebug,
