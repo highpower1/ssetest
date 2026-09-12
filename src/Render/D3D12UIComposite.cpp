@@ -139,9 +139,20 @@ float4 PSMain(PSInput input) : SV_TARGET
 {
 	const float4 base = baseColor.Sample(linearSampler, input.uv);
 	const float4 afterUI = postUI.Sample(pointSampler, input.uv);
+
+	// postUI is the game's own frame with the scene cleared to black, so a pixel
+	// belongs to the UI exactly when something was drawn there -- i.e. when it is
+	// not black. Judge that from colour alone.
+	//
+	// This used to fold afterUI.a into the coverage, which silently discarded the
+	// whole base image: postUI is a copy of an opaque backbuffer, so its alpha is
+	// 1 everywhere, coverage saturated to 1 everywhere, and the composite returned
+	// postUI for every pixel. The upscaler's output, the Ray Reconstruction result
+	// and the Neural Rendering uplift were all being computed and then thrown away
+	// at this line. An opaque buffer's alpha channel carries no UI information.
 	const float rgbMax = max(afterUI.r, max(afterUI.g, afterUI.b));
 	const float luma = dot(afterUI.rgb, float3(0.2126f, 0.7152f, 0.0722f));
-	const float coverage = max(afterUI.a, max(rgbMax, luma));
+	const float coverage = max(rgbMax, luma);
 	const float alpha = coverage > 0.01f ? saturate(coverage) : 0.0f;
 	const float3 uiColor = saturate(afterUI.rgb);
 	return float4(lerp(base.rgb, uiColor, alpha), 1.0f);
