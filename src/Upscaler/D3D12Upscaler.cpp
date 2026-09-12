@@ -363,7 +363,9 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 	// Frame gen wants: DLSS-G available, enabled in the menu, DLSS method active
 	// and in-world (IsActive). DLSS-G REQUIRES Reflex, so force Reflex on while
 	// generating (otherwise Streamline reports eFailReflexNotDetectedAtRuntime).
-	const bool want = Upscaling::kEnableDLSSG && IsActive() && method == 2 && sl->featureDLSSG && s.frameGenerationMode != 0;
+	// Never re-arm after the present watchdog latched frame generation off.
+	const bool want = Upscaling::kEnableDLSSG && IsActive() && method == 2 && sl->featureDLSSG &&
+		s.frameGenerationMode != 0 && !DX12SwapChain::GetSingleton()->IsDLSSGAutoDisabled();
 	sl->UpdateReflex(want ? (s.reflexMode == 0 ? 1u : s.reflexMode) : s.reflexMode, want);
 
 	sl->UpdateDLSSG(

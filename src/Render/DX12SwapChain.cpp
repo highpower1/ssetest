@@ -567,6 +567,24 @@ DX12SwapChain::CommandContext& DX12SwapChain::AcquireCommandContext()
 	return context;
 }
 
+void DX12SwapChain::TripDLSSGWatchdog(const char* a_reason, float a_presentMs, float a_frameMs)
+{
+	if (dlssgAutoDisabled.exchange(true, std::memory_order_acq_rel)) {
+		return;  // already latched
+	}
+
+	logger::error(
+		"[DX12SwapChain] DLSS-G WATCHDOG TRIPPED ({}) present={:.1f}ms frame={:.1f}ms -- frame generation is "
+		"disabled for the rest of this session to avoid a GPU hang. Restart the game to try it again.",
+		a_reason, a_presentMs, a_frameMs);
+
+	// Ask Streamline to drop DLSS-G; the pending disable is applied at the top of
+	// the next Present, which is the safe point for slDLSSGSetOptions.
+	auto* streamline = Streamline::GetSingleton();
+	streamline->RequestDLSSGDisable();
+	Upscaling::GetSingleton()->frameGenerationActive = false;
+}
+
 bool DX12SwapChain::EnsureDLSSGInputBuffers()
 {
 	auto* up = D3D12Upscaler::GetSingleton();
@@ -1068,11 +1086,40 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 	if (emitPresentMarkers) {
 		streamline->OnPresentStart();
 	}
+	const auto presentStart = std::chrono::steady_clock::now();
 	const auto result = a_presentParameters ?
 		swapChain->Present1(presentSyncInterval, presentFlags, a_presentParameters) :
 		swapChain->Present(presentSyncInterval, presentFlags);
+	const auto presentEnd = std::chrono::steady_clock::now();
 	if (emitPresentMarkers) {
 		streamline->OnPresentEnd(result, false);
+	}
+
+	// --- DLSS-G safety watchdog -------------------------------------------
+	// Bail out of frame generation at the first sign of the pre-TDR signature
+	// (a present or frame interval blowing past the budget) instead of letting
+	// the driver wedge. Two consecutive slow frames trip it, so a one-off hitch
+	// (shader compile, cell load) does not.
+	{
+		using ms = std::chrono::duration<float, std::milli>;
+		const float presentMs = ms(presentEnd - presentStart).count();
+		const float frameMs = lastPresentEnd.time_since_epoch().count() != 0 ?
+			ms(presentEnd - lastPresentEnd).count() : 0.0f;
+		if (dlssgPresentSafety && !dlssgAutoDisabled.load(std::memory_order_acquire)) {
+			constexpr float kStallMs = 80.0f;
+			if (presentMs > kStallMs || frameMs > kStallMs) {
+				if (++dlssgSlowPresentStreak >= 2) {
+					TripDLSSGWatchdog("present stall", presentMs, frameMs);
+				}
+			} else {
+				dlssgSlowPresentStreak = 0;
+			}
+		}
+		lastPresentEnd = presentEnd;
+	}
+	if (FAILED(result) && !dlssgAutoDisabled.load(std::memory_order_acquire)) {
+		// Device removed/hung: never retry frame generation this session.
+		TripDLSSGWatchdog("present failed", 0.0f, 0.0f);
 	}
 	if (dlssgPresentSafety && SUCCEEDED(result)) {
 		streamline->OnDLSSGPresentComplete();

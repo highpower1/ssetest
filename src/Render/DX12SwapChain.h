@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 
 #include <d3d11_4.h>
 #include <d3d12.h>
@@ -94,6 +95,14 @@ public:
 	void SetD3D11Device(ID3D11Device* a_d3d11Device);
 	void SetD3D11DeviceContext(ID3D11DeviceContext* a_d3d11Context);
 
+	// DLSS-G safety watchdog. A GPU hang from frame generation announces itself as
+	// a present/frame-time spike (Streamline logs "Frame rate over 100.00ms") a
+	// moment before the driver TDRs. When that signature (or a device-removal) is
+	// seen we latch frame generation OFF for the rest of the session so the driver
+	// never gets wedged -- an earlier build took the whole GPU down with a
+	// DPC_WATCHDOG_VIOLATION. Latched state is never cleared at runtime.
+	[[nodiscard]] bool IsDLSSGAutoDisabled() const { return dlssgAutoDisabled.load(std::memory_order_acquire); }
+
 	DXGISwapChainProxy* GetSwapChainProxy() const { return swapChainProxy; }
 	bool IsReady() const { return swapChainProxy && swapChain; }
 	UINT GetFrameIndex() const { return frameIndex; }
@@ -171,6 +180,12 @@ private:
 	// The presenting queue waits on it before overwriting that slot.
 	winrt::com_ptr<ID3D12Fence> dlssgCompletionFences[kDX12FrameCount];
 	UINT64 dlssgCompletionValues[kDX12FrameCount]{};
+	// DLSS-G watchdog state (see IsDLSSGAutoDisabled).
+	std::atomic<bool>                     dlssgAutoDisabled{ false };
+	std::chrono::steady_clock::time_point lastPresentEnd{};
+	std::uint32_t                         dlssgSlowPresentStreak = 0;
+	void TripDLSSGWatchdog(const char* a_reason, float a_presentMs, float a_frameMs);
+
 	DXGISwapChainProxy* swapChainProxy = nullptr;
 	UINT frameIndex = 0;
 	UINT nextCommandContext = 0;

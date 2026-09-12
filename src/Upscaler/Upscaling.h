@@ -52,12 +52,17 @@ public:
 	// side-device DLSS upscaler (D3D12Upscaler) is disabled to avoid a second
 	// Streamline D3D12 initialisation. Off = the shipped, validated upscaler path
 	// (side device, ENB presents D3D11). FG-1 tests proxy present with ENB.
-	static constexpr bool kFrameGenExperiment = false;
+	// Re-enabled: the present-override foundation was validated in-game (17k+
+	// frames, ENB look preserved, no hang) and Codex's D3D12 lifetime fixes landed.
+	static constexpr bool kFrameGenExperiment = true;
 
 	// Driver-safety gate. When false, DLSS-G is not requested from Streamline
-	// and no frame-generation swapchain is installed. Keep disabled until the
-	// D3D12 lifetime/synchronization fixes have passed an extended in-game test.
-	static constexpr bool kEnableDLSSG = false;
+	// and no frame-generation swapchain is installed. Re-enabled on top of the
+	// hardened synchronisation PLUS the runtime present watchdog
+	// (DX12SwapChain::IsDLSSGAutoDisabled), which latches frame generation off at
+	// the first pre-TDR stall so the driver cannot be wedged. Frame generation
+	// still defaults to OFF in the menu and must be opted into per playthrough.
+	static constexpr bool kEnableDLSSG = true;
 
 	// ---- lifecycle -------------------------------------------------------
 	void        OnDataLoaded();               // register sink + load settings
