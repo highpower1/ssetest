@@ -116,6 +116,26 @@ target("SkyrimUpscaler")
     add_cxxflags("cl::/bigobj", "cl::/MP", "cl::/permissive-", "cl::/Zc:__cplusplus", "cl::/arch:AVX")
 
 -- ===========================================================================
+-- NeuralColorGrade -- reference neural rendering module.
+-- A plain DLL (NOT an SKSE plugin) implementing the module ABI in
+-- include/SkyrimUpscalerNeural.h, so the external-module loader has something
+-- real to load and module authors have a working template. Build with:
+--     xmake build NeuralColorGrade
+-- then drop the DLL into Data/SKSE/Plugins/SkyrimUpscaler/Neural/.
+-- ===========================================================================
+target("NeuralColorGrade")
+    set_kind("shared")
+    set_filename("NeuralColorGrade.dll")
+
+    add_files("samples/NeuralColorGrade/NeuralColorGrade.cpp")
+    add_includedirs("include")
+
+    add_links("d3d11", "d3dcompiler")
+
+    add_defines("_AMD64_", "_WINDOWS", "NOMINMAX", "WIN32_LEAN_AND_MEAN")
+    add_cxxflags("cl::/permissive-", "cl::/Zc:__cplusplus")
+
+-- ===========================================================================
 -- SkyrimUpscalerProbe -- standalone diagnostic plugin.
 -- Minimal, dependency-light target that only dumps the renderer / render-target
 -- layout to its own log. Build just this with:  xmake build SkyrimUpscalerProbe

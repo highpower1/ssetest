@@ -31,59 +31,9 @@
 // port (see PORTING.md).
 // ===========================================================================
 
-extern "C"
-{
-	// -------- Neural module C ABI (v1) --------------------------------------
-	// A neural rendering DLL exports a single C function:
-	//
-	//     const SkyrimUpscalerNeuralModuleV1* SkyrimUpscalerNeural_GetModuleV1(void);
-	//
-	// returning a static, immutable descriptor. All callbacks are optional
-	// (may be null). The host guarantees calls happen on the render thread.
-
-	struct SkyrimUpscalerNeuralHostInfo
-	{
-		uint32_t             structSize;      // sizeof(SkyrimUpscalerNeuralHostInfo)
-		uint32_t             abiVersion;      // == SKYRIM_UPSCALER_NEURAL_ABI_V1
-		ID3D11Device*        d3d11Device;     // game device (may be null early)
-		ID3D11DeviceContext* d3d11Context;    // game immediate context
-		ID3D12Device*        d3d12Device;     // interop device (null until proxy up)
-		const wchar_t*       pluginDirectory; // Data/SKSE/Plugins/SkyrimUpscaler/
-	};
-
-	struct SkyrimUpscalerNeuralFrameInfo
-	{
-		uint32_t             structSize;
-		uint32_t             frameIndex;
-		float                renderWidth;
-		float                renderHeight;
-		float                displayWidth;
-		float                displayHeight;
-		ID3D11Texture2D*     color;           // in/out color for D3D11 modules
-		ID3D11Texture2D*     depth;           // optional
-		ID3D11Texture2D*     motionVectors;   // optional
-	};
-
-	// Returns 0 on success, non-zero on failure.
-	using SkyrimUpscalerNeural_InitFn     = int (*)(const SkyrimUpscalerNeuralHostInfo*);
-	using SkyrimUpscalerNeural_EvaluateFn = int (*)(const SkyrimUpscalerNeuralFrameInfo*);
-	using SkyrimUpscalerNeural_ShutdownFn = void (*)(void);
-
-	struct SkyrimUpscalerNeuralModuleV1
-	{
-		uint32_t                        structSize;   // sizeof(this)
-		uint32_t                        abiVersion;   // SKYRIM_UPSCALER_NEURAL_ABI_V1
-		const char*                     name;         // human-readable, UTF-8
-		const char*                     version;      // module version string
-		SkyrimUpscalerNeural_InitFn     Init;
-		SkyrimUpscalerNeural_EvaluateFn Evaluate;
-		SkyrimUpscalerNeural_ShutdownFn Shutdown;
-	};
-
-	using SkyrimUpscalerNeural_GetModuleV1Fn = const SkyrimUpscalerNeuralModuleV1* (*)(void);
-}
-
-#define SKYRIM_UPSCALER_NEURAL_ABI_V1 1u
+// The module ABI itself lives in a standalone public header so DLL authors can
+// build against it without any of this project's sources.
+#include "SkyrimUpscalerNeural.h"
 
 class NeuralRendering
 {
