@@ -7,6 +7,7 @@
 
 #include "FidelityFX.h"
 #include "Streamline.h"
+#include "Upscaler/D3D12Upscaler.h"
 #include "Upscaling.h"
 
 namespace
@@ -97,7 +98,7 @@ namespace
 	{
 		switch (a_method) {
 		case Upscaling::UpscaleMethod::kDLSS:
-			return "DLSS";
+			return D3D12Upscaler::GetSingleton()->IsRayReconstructionActive() ? "DLSS-RR" : "DLSS";
 		case Upscaling::UpscaleMethod::kFSR:
 			return "FSR";
 		case Upscaling::UpscaleMethod::kSpatialFallback:

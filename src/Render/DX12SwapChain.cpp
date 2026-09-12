@@ -1107,7 +1107,19 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 			ms(presentEnd - lastPresentEnd).count() : 0.0f;
 		if (dlssgPresentSafety && !dlssgAutoDisabled.load(std::memory_order_acquire)) {
 			constexpr float kStallMs = 80.0f;
-			if (presentMs > kStallMs || frameMs > kStallMs) {
+			// A long gap between two presents is NOT by itself a GPU problem: a
+			// menu, a loading screen, an alt-tab or a CPU hitch all produce one
+			// while Present itself returns promptly. Judging on the gap cost us a
+			// false trip (present=1.0ms, frame=6861.7ms) that disabled frame
+			// generation for a whole session. The pre-TDR signature is Present
+			// *blocking*, so only that arms the watchdog; an outright failed
+			// present is handled separately below.
+			constexpr float kPauseMs = 1000.0f;
+			if (frameMs > kPauseMs) {
+				// Resuming from a pause -- the next interval is the first one that
+				// says anything about the GPU.
+				dlssgSlowPresentStreak = 0;
+			} else if (presentMs > kStallMs) {
 				if (++dlssgSlowPresentStreak >= 2) {
 					TripDLSSGWatchdog("present stall", presentMs, frameMs);
 				}

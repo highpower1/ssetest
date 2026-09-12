@@ -48,6 +48,10 @@ public:
 	// The private interop device, or null before Init() succeeds. Handed to
 	// external neural modules so a D3D12 module can share our device.
 	[[nodiscard]] ID3D12Device* GetD3D12Device() const { return d3d12Device.get(); }
+	// True only while the DLSS-D denoiser is what actually resolves frames -- not
+	// merely enabled in the menu, so the OSD never claims Ray Reconstruction while
+	// the upscaler has fallen back to super resolution.
+	[[nodiscard]] bool IsRayReconstructionActive() const { return rayReconstruction && !rayReconstructionFailed; }
 	// Active = a usable upscaler is selected (DLSS needs DLSS available; FSR does
 	// not) AND we're in gameplay (not blocked by a menu/logo/loading screen).
 	// Drives whether the jitter hook injects a (non-zero) Halton offset + DRS.
