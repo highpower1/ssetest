@@ -65,7 +65,10 @@ bool D3D12Upscaler::CreateCommandInfrastructure()
 		logger::error("[D3D12Upscaler] CreateCommandList failed");
 		return false;
 	}
-	commandList->Close();  // start closed so it can be Reset before recording
+	if (FAILED(commandList->Close())) {  // start closed so it can be Reset before recording
+		logger::error("[D3D12Upscaler] Initial command-list Close failed");
+		return false;
+	}
 	if (FAILED(d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(fence.put())))) {
 		logger::error("[D3D12Upscaler] CreateFence failed");
 		return false;
@@ -76,19 +79,36 @@ bool D3D12Upscaler::CreateCommandInfrastructure()
 
 bool D3D12Upscaler::CreateSharedFence()
 {
-	HANDLE handle = nullptr;
+	HANDLE rawHandle = nullptr;
 	if (FAILED(d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(sharedFence.put())))) {
 		logger::error("[D3D12Upscaler] CreateFence(shared) failed");
 		return false;
 	}
-	if (FAILED(d3d12Device->CreateSharedHandle(sharedFence.get(), nullptr, GENERIC_ALL, nullptr, &handle))) {
+	if (FAILED(d3d12Device->CreateSharedHandle(sharedFence.get(), nullptr, GENERIC_ALL, nullptr, &rawHandle))) {
 		logger::error("[D3D12Upscaler] CreateSharedHandle(fence) failed");
 		return false;
 	}
-	const HRESULT hr = d3d11Device->OpenSharedFence(handle, IID_PPV_ARGS(d3d11Fence.put()));
-	CloseHandle(handle);
+	winrt::handle handle;
+	handle.attach(rawHandle);
+	const HRESULT hr = d3d11Device->OpenSharedFence(handle.get(), IID_PPV_ARGS(d3d11Fence.put()));
 	if (FAILED(hr)) {
 		logger::error("[D3D12Upscaler] OpenSharedFence failed");
+		return false;
+	}
+
+	if (FAILED(d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(presentConsumptionFence.put())))) {
+		logger::error("[D3D12Upscaler] CreateFence(present consumption) failed");
+		return false;
+	}
+	HANDLE rawPresentHandle = nullptr;
+	if (FAILED(d3d12Device->CreateSharedHandle(presentConsumptionFence.get(), nullptr, GENERIC_ALL, nullptr, &rawPresentHandle))) {
+		logger::error("[D3D12Upscaler] CreateSharedHandle(present consumption) failed");
+		return false;
+	}
+	winrt::handle presentHandle;
+	presentHandle.attach(rawPresentHandle);
+	if (FAILED(d3d11Device->OpenSharedFence(presentHandle.get(), IID_PPV_ARGS(d3d11PresentConsumptionFence.put())))) {
+		logger::error("[D3D12Upscaler] OpenSharedFence(present consumption) failed");
 		return false;
 	}
 	return true;
@@ -301,13 +321,31 @@ ID3D12Resource* D3D12Upscaler::GetMotionVectors12() const { return motionVectors
 ID3D12Resource* D3D12Upscaler::GetDepth12() const { return depth ? depth->resource12.get() : nullptr; }
 ID3D12Fence* D3D12Upscaler::GetWorkFence() const { return sharedFence.get(); }
 
+HRESULT D3D12Upscaler::SignalPresentInputsConsumed(ID3D12CommandQueue* a_presentQueue)
+{
+	if (!a_presentQueue || !presentConsumptionFence) {
+		return E_POINTER;
+	}
+
+	const auto consumedValue = presentConsumptionSignalValue.fetch_add(1, std::memory_order_acq_rel) + 1;
+	const auto result = a_presentQueue->Signal(presentConsumptionFence.get(), consumedValue);
+	if (FAILED(result)) {
+		logger::critical("[D3D12Upscaler] Could not signal present-input consumption value={} result=0x{:08X}", consumedValue, static_cast<uint32_t>(result));
+		return result;
+	}
+	presentInputsConsumedValue.store(consumedValue, std::memory_order_release);
+	return S_OK;
+}
+
 // DLSS-G re-enabled on the present-override foundation (Step B). Now the DLSS
 // output is fully D3D12-native as the final present color, so DLSS-G gets a
 // coherent, paceable present timeline (the earlier kMAIN round-trip gave it an
 // erratic one it couldn't pace -> the DEVICE_HUNGs). hud-less = the D3D12 DLSS
 // output (colorOutput12); the composited scene+UI is the backbuffer DLSS-G reads.
-static constexpr bool kEnableDLSSG = true;
-
+// Safety gate: DLSS-G currently causes a driver-level TDR/bugcheck on the
+// target system. Keep the feature hard-disabled until the proxy-present and
+// Streamline synchronization path has been validated without risking another
+// machine-wide crash. DLSS-SR and FSR remain available.
 // present-override (fo4test flow): keep the DLSS output on D3D12 as the final
 // present color instead of copying it back to the game's D3D11 kMAIN. kMAIN is
 // then cleared so the game renders UI-only onto black, and the proxy present
@@ -325,7 +363,7 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 	// Frame gen wants: DLSS-G available, enabled in the menu, DLSS method active
 	// and in-world (IsActive). DLSS-G REQUIRES Reflex, so force Reflex on while
 	// generating (otherwise Streamline reports eFailReflexNotDetectedAtRuntime).
-	const bool want = kEnableDLSSG && IsActive() && method == 2 && sl->featureDLSSG && s.frameGenerationMode != 0;
+	const bool want = Upscaling::kEnableDLSSG && IsActive() && method == 2 && sl->featureDLSSG && s.frameGenerationMode != 0;
 	sl->UpdateReflex(want ? (s.reflexMode == 0 ? 1u : s.reflexMode) : s.reflexMode, want);
 
 	sl->UpdateDLSSG(
@@ -371,6 +409,14 @@ void D3D12Upscaler::UpdateFromSettings()
 void D3D12Upscaler::Evaluate()
 {
 	if (!ready) {
+		return;
+	}
+	workFrameTokenIndex.store(std::numeric_limits<uint32_t>::max(), std::memory_order_release);
+	if (const auto removedReason = d3d12Device->GetDeviceRemovedReason(); FAILED(removedReason)) {
+		logger::critical("[D3D12Upscaler] Evaluate disabled because the D3D12 device is removed: 0x{:08X}", static_cast<uint32_t>(removedReason));
+		ready = false;
+		workFenceValue.store(0, std::memory_order_release);
+		Streamline::GetSingleton()->RequestDLSSGDisable();
 		return;
 	}
 
@@ -423,11 +469,18 @@ void D3D12Upscaler::Evaluate()
 	auto* sl = Streamline::GetSingleton();
 
 	try {
+		// The previous Present may still be copying motion/depth/color from these
+		// shared resources on its own D3D12 queue. Queue a D3D11-side wait before
+		// overwriting them for this frame.
+		if (const auto consumedValue = presentInputsConsumedValue.exchange(0, std::memory_order_acq_rel); consumedValue != 0) {
+			DX::ThrowIfFailed(d3d11Context4->Wait(d3d11PresentConsumptionFence.get(), consumedValue));
+		}
 		// --- D3D11: copy upscaler inputs into shared textures, signal the fence ---
 		d3d11Context4->CopyResource(colorInput->resource11.get(), kMain);
 		d3d11Context4->CopyResource(motionVectors->resource11.get(), kMv);
 		d3d11Context4->CopyResource(depth->resource11.get(), kDepth);
-		d3d11Context4->Signal(d3d11Fence.get(), ++syncValue);
+		const auto inputsReadyValue = syncValue.fetch_add(1, std::memory_order_acq_rel) + 1;
+		DX::ThrowIfFailed(d3d11Context4->Signal(d3d11Fence.get(), inputsReadyValue));
 
 		const auto* frame = Util::CameraFrame::GetSingleton();
 		const DirectX::XMFLOAT2 jitter = frame->useJitter ? frame->jitter : DirectX::XMFLOAT2{ 0.0f, 0.0f };
@@ -435,7 +488,9 @@ void D3D12Upscaler::Evaluate()
 		// --- DLSS needs its per-frame camera constants + frame token up front ---
 		sl::FrameToken* frameToken = nullptr;
 		if (method == 2) {
-			sl->UpdateConstants(float2(jitter.x, jitter.y));
+			if (!sl->UpdateConstants(float2(jitter.x, jitter.y))) {
+				return;
+			}
 			frameToken = sl->GetFrameTokenForFrame(sl->GetCurrentFrameTokenIndex());
 			if (!frameToken) {
 				return;
@@ -443,9 +498,26 @@ void D3D12Upscaler::Evaluate()
 		}
 
 		// --- D3D12: wait for D3D11 copies, run the upscaler, signal ---
-		commandQueue->Wait(sharedFence.get(), syncValue);
-		commandAllocator->Reset();
-		commandList->Reset(commandAllocator.get(), nullptr);
+		DX::ThrowIfFailed(commandQueue->Wait(sharedFence.get(), inputsReadyValue));
+		// A D3D12 command allocator cannot be reset until every submitted command
+		// list that used it has completed on the GPU. The D3D11-side Wait below is
+		// only a queued GPU dependency; it does not block this CPU thread.
+		if (fenceValue != 0 && fence->GetCompletedValue() < fenceValue) {
+			DX::ThrowIfFailed(fence->SetEventOnCompletion(fenceValue, fenceEvent.get()));
+			constexpr DWORD kGpuWaitTimeoutMs = 5000;
+			const auto waitResult = WaitForSingleObjectEx(fenceEvent.get(), kGpuWaitTimeoutMs, FALSE);
+			if (waitResult != WAIT_OBJECT_0) {
+				logger::critical(
+					"[D3D12Upscaler] GPU command fence wait failed/timed out result={} completed={} expected={}; disabling upscaler",
+					waitResult,
+					fence->GetCompletedValue(),
+					fenceValue);
+				ready = false;
+				return;
+			}
+		}
+		DX::ThrowIfFailed(commandAllocator->Reset());
+		DX::ThrowIfFailed(commandList->Reset(commandAllocator.get(), nullptr));
 
 		const float2 renderSize{ static_cast<float>(GetRenderWidth()), static_cast<float>(GetRenderHeight()) };
 		const float2 displaySize{ static_cast<float>(displayWidth), static_cast<float>(displayHeight) };
@@ -503,14 +575,19 @@ void D3D12Upscaler::Evaluate()
 			Transition(commandList.get(), colorOutput->resource12.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
 		}
 
-		commandList->Close();
+		DX::ThrowIfFailed(commandList->Close());
 		ID3D12CommandList* lists[] = { commandList.get() };
 		commandQueue->ExecuteCommandLists(1, lists);
-		commandQueue->Signal(sharedFence.get(), ++syncValue);
-		workFenceValue = syncValue;  // proxy present waits on this before reading mvec/depth
+		DX::ThrowIfFailed(commandQueue->Signal(fence.get(), ++fenceValue));
+		const auto workReadyValue = syncValue.fetch_add(1, std::memory_order_acq_rel) + 1;
+		DX::ThrowIfFailed(commandQueue->Signal(sharedFence.get(), workReadyValue));
+		workFenceValue.store(workReadyValue, std::memory_order_release);  // proxy present waits on this before reading mvec/depth
+		if (ok && method == 2 && frameToken) {
+			workFrameTokenIndex.store(static_cast<uint32_t>(*frameToken), std::memory_order_release);
+		}
 
 		// --- D3D11: wait for D3D12, copy the result back into main color ---
-		d3d11Context4->Wait(d3d11Fence.get(), syncValue);
+		DX::ThrowIfFailed(d3d11Context4->Wait(d3d11Fence.get(), workReadyValue));
 		if (ok) {
 			if constexpr (Upscaling::kFrameGenExperiment) {
 				if (kPresentOverride) {
@@ -551,6 +628,17 @@ void D3D12Upscaler::Evaluate()
 				ok, sharpened, GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight, renderScale, sharpness);
 		}
 	} catch (const std::exception& e) {
-		logger::error("[D3D12Upscaler] Evaluate failed: {}", e.what());
+		const auto removedReason = d3d12Device ? d3d12Device->GetDeviceRemovedReason() : S_OK;
+		logger::critical(
+			"[D3D12Upscaler] Evaluate failed; disabling D3D12 upscaling and requesting DLSS-G shutdown: {} removed=0x{:08X}",
+			e.what(),
+			static_cast<uint32_t>(removedReason));
+		if (commandList) {
+			std::ignore = commandList->Close();
+		}
+		ready = false;
+		workFenceValue.store(0, std::memory_order_release);
+		workFrameTokenIndex.store(std::numeric_limits<uint32_t>::max(), std::memory_order_release);
+		sl->RequestDLSSGDisable();
 	}
 }

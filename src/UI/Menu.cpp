@@ -4,6 +4,7 @@
 
 #include "Settings/Settings.h"
 #include "Neural/NeuralRendering.h"
+#include "Upscaler/Upscaling.h"
 
 #include "SKSEMenuFramework.h"
 
@@ -186,7 +187,10 @@ namespace
 
 		ImGuiMCP::SeparatorText("Frame Generation and Latency");
 		const bool upscalingDisabled = settings.upscaleMethodPreference == static_cast<uint32_t>(SettingsStore::UpscaleMethod::kDisabled);
-		ImGuiMCP::BeginDisabled(upscalingDisabled);
+		if constexpr (!Upscaling::kEnableDLSSG) {
+			ImGuiMCP::TextWrapped("Frame Generation is temporarily disabled by the driver-safety gate.");
+		}
+		ImGuiMCP::BeginDisabled(upscalingDisabled || !Upscaling::kEnableDLSSG);
 		static constexpr std::array frameGenerationModes{ "Disabled", "On", "Auto" };
 		changed |= ComboSetting(
 			"Frame Generation",

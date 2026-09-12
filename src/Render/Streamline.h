@@ -171,7 +171,7 @@ public:
 	 * @brief Tag present-time DLSS-G resources for the current frame.
 	 */
 	void TagDLSSGResources(ID3D11Texture2D* a_hudlessColor, ID3D11Texture2D* a_motionVectors, ID3D11Texture2D* a_depth, float2 a_renderSize, float2 a_displaySize);
-	void TagDLSSGResources(ID3D12Resource* a_hudlessColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_uiColorAlpha, ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex, float2 a_renderSize, float2 a_displaySize);
+	bool TagDLSSGResources(ID3D12Resource* a_hudlessColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_uiColorAlpha, ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex, float2 a_renderSize, float2 a_displaySize);
 	void ClearDLSSGResourceTags(ID3D12GraphicsCommandList* a_commandList);
 	void SetPresentFrameIndex(uint32_t a_frameIndex);
 
@@ -181,6 +181,8 @@ public:
 	void OnPresentStart();
 	void OnPresentEnd(HRESULT a_result, bool a_queryState = true);
 	void QueryDLSSGState(std::string_view a_phase);
+	[[nodiscard]] ID3D12Fence* GetDLSSGInputsProcessingCompletionFence() const { return dlssgInputsProcessingCompletionFence; }
+	[[nodiscard]] uint64_t GetDLSSGInputsProcessingCompletionFenceValue() const { return dlssgInputsProcessingCompletionFenceValue; }
 	sl::ReflexMode GetCurrentReflexMode() const { return currentReflexMode; }
 	float GetReflexLatencyMs();
 	uint32_t GetOSDGeneratedFramesPerRenderFrame() const { return dlssgActive ? (currentDLSSGGeneratedFrames != 0 ? currentDLSSGGeneratedFrames : 1) : 0; }
@@ -289,6 +291,8 @@ private:
 	uint32_t lastDLSSGStatus = std::numeric_limits<uint32_t>::max();
 	uint32_t lastDLSSGPresentedFrames = std::numeric_limits<uint32_t>::max();
 	uint32_t lastDLSSGStateQueryFrame = std::numeric_limits<uint32_t>::max();
+	ID3D12Fence* dlssgInputsProcessingCompletionFence = nullptr;  // Streamline-owned
+	uint64_t dlssgInputsProcessingCompletionFenceValue = 0;
 	uint32_t maxFramesToGenerate = 1;
 	bool dynamicMFGSupported = false;
 	bool dlssgStateKnown = false;

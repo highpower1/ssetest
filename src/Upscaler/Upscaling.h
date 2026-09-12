@@ -52,7 +52,12 @@ public:
 	// side-device DLSS upscaler (D3D12Upscaler) is disabled to avoid a second
 	// Streamline D3D12 initialisation. Off = the shipped, validated upscaler path
 	// (side device, ENB presents D3D11). FG-1 tests proxy present with ENB.
-	static constexpr bool kFrameGenExperiment = true;
+	static constexpr bool kFrameGenExperiment = false;
+
+	// Driver-safety gate. When false, DLSS-G is not requested from Streamline
+	// and no frame-generation swapchain is installed. Keep disabled until the
+	// D3D12 lifetime/synchronization fixes have passed an extended in-game test.
+	static constexpr bool kEnableDLSSG = false;
 
 	// ---- lifecycle -------------------------------------------------------
 	void        OnDataLoaded();               // register sink + load settings

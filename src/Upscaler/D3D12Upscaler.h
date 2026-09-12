@@ -6,7 +6,9 @@
 #include <dxgi1_6.h>
 #include <winrt/base.h>
 
+#include <atomic>
 #include <memory>
+#include <limits>
 
 class D3D11D3D12SharedTexture;  // from Render/DX12SwapChain.h
 
@@ -84,7 +86,14 @@ public:
 	// waits on this before copying the upscaler's motion-vector/depth outputs for
 	// DLSS-G (cross-queue sync -- the upscaler runs on its own queue).
 	[[nodiscard]] ID3D12Fence* GetWorkFence() const;
-	[[nodiscard]] uint64_t     GetWorkFenceValue() const { return workFenceValue; }
+	[[nodiscard]] uint64_t     GetWorkFenceValue() const { return workFenceValue.load(std::memory_order_acquire); }
+	// Enqueue a signal after the present queue has copied the shared DLSS-G
+	// inputs. Evaluate waits for this value on D3D11 before overwriting them.
+	HRESULT SignalPresentInputsConsumed(ID3D12CommandQueue* a_presentQueue);
+	// Streamline token used by the most recent successful DLSS evaluation.  The
+	// proxy present must use this exact token for DLSS-G tags and Reflex markers;
+	// the game frame counter may already have advanced by the time Present runs.
+	[[nodiscard]] uint32_t GetWorkFrameTokenIndex() const { return workFrameTokenIndex.load(std::memory_order_acquire); }
 
 	bool evalEnabled = true;
 
@@ -111,8 +120,12 @@ private:
 	// our D3D12 device (D3D12 creates it shared; D3D11 opens the same object).
 	winrt::com_ptr<ID3D12Fence>              sharedFence;
 	winrt::com_ptr<ID3D11Fence>              d3d11Fence;
+	winrt::com_ptr<ID3D12Fence>              presentConsumptionFence;
+	winrt::com_ptr<ID3D11Fence>              d3d11PresentConsumptionFence;
 	winrt::com_ptr<ID3D11DeviceContext4>     d3d11Context4;
-	uint64_t                                 syncValue = 0;
+	std::atomic_uint64_t                     syncValue{ 0 };
+	std::atomic_uint64_t                     presentConsumptionSignalValue{ 0 };
+	std::atomic_uint64_t                     presentInputsConsumedValue{ 0 };
 
 	// Interop textures (display-sized; DLSS reads a render-sized sub-region).
 	std::unique_ptr<D3D11D3D12SharedTexture> colorInput;
@@ -132,7 +145,8 @@ private:
 	// True while a menu/logo/loading screen is up (set from UpdateFromSettings).
 	bool     blocked = true;
 	// sharedFence value after the most recent Evaluate's D3D12 DLSS signal.
-	uint64_t workFenceValue = 0;
+	std::atomic_uint64_t workFenceValue{ 0 };
+	std::atomic_uint32_t workFrameTokenIndex{ std::numeric_limits<uint32_t>::max() };
 	// Engine-TAA management so toggling the upscaler restores the player's TAA.
 	bool taaOriginalKnown = false;
 	bool taaOriginal = false;

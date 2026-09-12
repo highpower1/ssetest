@@ -1,5 +1,35 @@
 # SkyrimUpscaler — Handoff Spec (for Codex / next engineer)
 
+> **2026-09-12 safety update:** A DLSS-G test caused a machine-wide GPU TDR and
+> Windows bugcheck `0x133 DPC_WATCHDOG_VIOLATION`, with an accompanying
+> `0x141`/`nvlddmkm.sys` LiveKernelEvent. Audit found that
+> `D3D12Upscaler::Evaluate` reset a single D3D12 command allocator without first
+> waiting for its previous GPU submission to complete, which is undefined D3D12
+> behavior and can surface when DLSS-G's asynchronous Present lets the CPU run
+> ahead. A dedicated fence wait and timeout are now implemented. DLSS-G is
+> additionally hard-disabled by `Upscaling::kEnableDLSSG=false`, and the entire
+> proxy-present experiment is disabled by `kFrameGenExperiment=false`: DLSS-G
+> is not requested from Streamline, no Streamline/FSR frame-generation
+> swapchain is installed, and the menu control is disabled. Do not re-enable it until the
+> DLSS-SR/FSR safety build passes an extended soak test, followed by a separate
+> disposable-machine or recoverable GPU test of the FG path.
+
+> **2026-09-12 resumed safety work:** The validated safety changes are integrated
+> into `C:\Claude\SkyrimUpscaler`; a writable mirror remains at
+> `C:\Users\kurif\Documents\Codex\2026-09-12\sa\SkyrimUpscaler-dev`. The safety
+> gates remain false. The audit added: a dedicated Present-consumption fence before D3D11
+> overwrites shared inputs; per-backbuffer waits on Streamline's
+> `inputsProcessingCompletionFence`; atomic creation of the complete DLSS-G
+> input-buffer set; a five-second command-context fence timeout; checked queue
+> waits; device-removal fail-fast; correct `Present1` forwarding; and exception
+> containment at the DXGI ABI boundary. A drained `ResizeBuffers` recreation
+> path is now implemented: it disables DLSS-G, waits for Streamline input
+> completion and D3D11/D3D12 queue idleness, releases old back buffers, resizes
+> the real swapchain, and rebuilds shared presentation textures. Non-three-buffer
+> requests fail closed because the proxy arrays are intentionally fixed at three.
+> This path is compile-verified but still requires runtime resize/Alt-Tab testing
+> before DLSS-G can be enabled.
+
 Reverse‑engineered port of **`github.com/jarari/fo4test`** (the original Fallout 4 FSR/DLSS/DLSS‑G
 upscaler; we cloned the `highpower1/fo4test` fork locally at `C:\Claude\fo4test` — same code)
 into an **SKSE plugin for Skyrim Special Edition / Anniversary Edition**.

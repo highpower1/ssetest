@@ -6,12 +6,12 @@
 
 #include "Game/Util.h"
 #include "Game/Renderer.h"
+#include "Upscaler/Upscaling.h"
 
 namespace
 {
 	constexpr wchar_t kPCLStatsPingMessageName[] = L"PC_Latency_Stats_Ping";
 	constexpr auto kInputSampleMarker = static_cast<sl::PCLMarker>(6);
-	constexpr uint32_t kDLSSGStateQueryInterval = 15;
 
 	void StreamlineLogCallback(sl::LogType a_type, const char* a_message)
 	{
@@ -197,9 +197,16 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 
 	sl::Feature d3d11FeaturesToLoad[] = { sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
 	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
+	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
 	if (a_renderAPI == sl::RenderAPI::eD3D12) {
-		pref.featuresToLoad = d3d12FeaturesToLoad;
-		pref.numFeaturesToLoad = _countof(d3d12FeaturesToLoad);
+		if constexpr (Upscaling::kEnableDLSSG) {
+			pref.featuresToLoad = d3d12FeaturesToLoad;
+			pref.numFeaturesToLoad = _countof(d3d12FeaturesToLoad);
+		} else {
+			pref.featuresToLoad = d3d12SafeFeaturesToLoad;
+			pref.numFeaturesToLoad = _countof(d3d12SafeFeaturesToLoad);
+			logger::warn("[Streamline] DLSS-G is disabled by the driver-safety gate");
+		}
 	} else {
 		pref.featuresToLoad = d3d11FeaturesToLoad;
 		pref.numFeaturesToLoad = _countof(d3d11FeaturesToLoad);
@@ -289,6 +296,8 @@ void Streamline::Shutdown()
 	lastDLSSGStatus = std::numeric_limits<uint32_t>::max();
 	lastDLSSGPresentedFrames = std::numeric_limits<uint32_t>::max();
 	lastDLSSGStateQueryFrame = std::numeric_limits<uint32_t>::max();
+	dlssgInputsProcessingCompletionFence = nullptr;
+	dlssgInputsProcessingCompletionFenceValue = 0;
 	maxFramesToGenerate = 1;
 	dynamicMFGSupported = false;
 	dlssgStateKnown = false;
@@ -368,11 +377,11 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 		featureDLSS = false;
 		logger::info("[Streamline] DLSS skipped: D3D11 DLSS SR is deprecated; use the D3D12 proxy path");
 	}
-	if (UsesD3D12()) {
+	if (UsesD3D12() && Upscaling::kEnableDLSSG) {
 		CheckFeature(sl::kFeatureDLSS_G, a_adapter, featureDLSSG, "DLSS-G");
 	} else {
 		featureDLSSG = false;
-		logger::info("[Streamline] DLSS-G skipped: Streamline DLSS-G runtime is D3D12/Vulkan only");
+		logger::info("[Streamline] DLSS-G skipped: unavailable for this render mode or disabled by safety gate");
 	}
 	CheckFeature(sl::kFeatureReflex, a_adapter, featureReflex, "Reflex");
 	CheckFeature(sl::kFeatureNIS, a_adapter, featureNIS, "NIS");
@@ -592,15 +601,6 @@ bool Streamline::UpdateDLSSG(bool a_enabled, uint a_mode, uint a_numFramesToGene
 		return false;
 	}
 
-	if (!dlssgStateKnown && slDLSSGGetState) {
-		sl::DLSSGState state{};
-		if (SL_SUCCEEDED(result, slDLSSGGetState(viewport, state, nullptr))) {
-			maxFramesToGenerate = std::max<uint32_t>(1, state.numFramesToGenerateMax);
-			dynamicMFGSupported = state.bIsDynamicMFGSupported == sl::Boolean::eTrue;
-		}
-		dlssgStateKnown = true;
-	}
-
 	const bool hasSizes = a_renderSize.x > 0.0f && a_renderSize.y > 0.0f && a_displaySize.x > 0.0f && a_displaySize.y > 0.0f;
 	sl::DLSSGMode mode = sl::DLSSGMode::eOff;
 	if (a_enabled && hasSizes) {
@@ -798,15 +798,15 @@ void Streamline::TagDLSSGResources(ID3D11Texture2D* a_hudlessColor, ID3D11Textur
 	}
 }
 
-void Streamline::TagDLSSGResources(ID3D12Resource* a_hudlessColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_uiColorAlpha, ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex, float2 a_renderSize, float2 a_displaySize)
+bool Streamline::TagDLSSGResources(ID3D12Resource* a_hudlessColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_uiColorAlpha, ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex, float2 a_renderSize, float2 a_displaySize)
 {
 	if (!dlssgActive || !slSetTagForFrame || !a_hudlessColor || !a_motionVectors || !a_depth || !a_commandList) {
-		return;
+		return false;
 	}
 
 	auto* a_frameToken = GetFrameTokenForFrame(a_frameIndex);
 	if (!a_frameToken) {
-		return;
+		return false;
 	}
 
 	constexpr auto lifecycle = sl::ResourceLifecycle::eValidUntilPresent;
@@ -830,7 +830,9 @@ void Streamline::TagDLSSGResources(ID3D12Resource* a_hudlessColor, ID3D12Resourc
 	const auto tagResult = slSetTagForFrame(*a_frameToken, viewport, resourceTags, numResourceTags, a_commandList);
 	if (SL_FAILED(result, tagResult)) {
 		logger::warn("[Streamline] Could not tag D3D12 DLSS-G resources: {}", magic_enum::enum_name(result));
+		return false;
 	}
+	return true;
 }
 
 void Streamline::ClearDLSSGResourceTags(ID3D12GraphicsCommandList* a_commandList)
@@ -911,11 +913,6 @@ void Streamline::QueryDLSSGState(std::string_view a_phase)
 
 	static auto gameViewport = Util::State_GetSingleton();
 	const auto currentFrame = gameViewport ? gameViewport->frameCount : lastDLSSGStateQueryFrame + 1;
-	if (dlssgActive &&
-		lastDLSSGStateQueryFrame != std::numeric_limits<uint32_t>::max() &&
-		currentFrame - lastDLSSGStateQueryFrame < kDLSSGStateQueryInterval) {
-		return;
-	}
 	lastDLSSGStateQueryFrame = currentFrame;
 
 	sl::DLSSGState state{};
@@ -927,6 +924,8 @@ void Streamline::QueryDLSSGState(std::string_view a_phase)
 	maxFramesToGenerate = std::max<uint32_t>(1, state.numFramesToGenerateMax);
 	dynamicMFGSupported = state.bIsDynamicMFGSupported == sl::Boolean::eTrue;
 	dlssgStateKnown = true;
+	dlssgInputsProcessingCompletionFence = reinterpret_cast<ID3D12Fence*>(state.inputsProcessingCompletionFence);
+	dlssgInputsProcessingCompletionFenceValue = state.lastPresentInputsProcessingCompletionFenceValue;
 
 	const auto status = static_cast<uint32_t>(state.status);
 	if (lastDLSSGStatus != status || lastDLSSGPresentedFrames != state.numFramesActuallyPresented) {

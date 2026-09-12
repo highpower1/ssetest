@@ -99,7 +99,8 @@ public:
 	UINT GetFrameIndex() const { return frameIndex; }
 	ID3D12Device* GetD3D12Device() const { return d3d12Device.get(); }
 
-	HRESULT Present(UINT SyncInterval, UINT Flags);
+	HRESULT Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT_PARAMETERS* a_presentParameters = nullptr);
+	HRESULT ResizeBuffers(UINT a_bufferCount, UINT a_width, UINT a_height, DXGI_FORMAT a_newFormat, UINT a_swapChainFlags);
 	struct D3D12EvaluationResult
 	{
 		bool dlss = false;
@@ -142,9 +143,11 @@ private:
 	// into per-backbuffer-index buffers on the PRESENT queue so DLSS-G's async
 	// reads never race the upscaler's separate queue or the next frame's write.
 	bool EnsureDLSSGInputBuffers();
-	void PrepareAndTagDLSSGInputs(ID3D12GraphicsCommandList* a_commandList, UINT a_frameIndex, ID3D12Resource* a_hudlessSrc);
+	bool PrepareAndTagDLSSGInputs(ID3D12GraphicsCommandList* a_commandList, UINT a_frameIndex, ID3D12Resource* a_hudlessSrc);
 	D3D12EvaluationResult EvaluateD3D12WorkOnCommandList(ID3D12GraphicsCommandList* a_commandList, UINT a_frameIndex, bool a_evaluateDLSS, bool a_evaluateFSR, bool a_evaluateFSRFrameGeneration);
 	void WaitForCommandFence(UINT64 a_value);
+	void WaitForIdleForResize();
+	void RecreateInteropTextures();
 	void RefreshBackBuffers();
 
 	winrt::com_ptr<ID3D12Device> proxyD3D12Device;
@@ -164,6 +167,10 @@ private:
 	winrt::com_ptr<ID3D12Resource> dlssgHudless[kDX12FrameCount];
 	winrt::com_ptr<ID3D12Resource> dlssgMvec[kDX12FrameCount];
 	winrt::com_ptr<ID3D12Resource> dlssgDepth[kDX12FrameCount];
+	// Streamline completion point for the last DLSS-G use of each input slot.
+	// The presenting queue waits on it before overwriting that slot.
+	winrt::com_ptr<ID3D12Fence> dlssgCompletionFences[kDX12FrameCount];
+	UINT64 dlssgCompletionValues[kDX12FrameCount]{};
 	DXGISwapChainProxy* swapChainProxy = nullptr;
 	UINT frameIndex = 0;
 	UINT nextCommandContext = 0;

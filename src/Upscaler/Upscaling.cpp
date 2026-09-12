@@ -147,8 +147,8 @@ Upscaling::UpscaleMethod Upscaling::GetUpscaleMethod(bool a_checkMenu)
 		return UpscaleMethod::kDisabled;
 	}
 
-	const auto& settings = SettingsStore::GetSingleton()->settings;
-	auto method = static_cast<UpscaleMethod>(settings.upscaleMethodPreference);
+	const auto& liveSettings = SettingsStore::GetSingleton()->settings;
+	auto method = static_cast<UpscaleMethod>(liveSettings.upscaleMethodPreference);
 
 	if ((method == UpscaleMethod::kDLSS || method == UpscaleMethod::kFSR) && !dx12Ready) {
 		return UpscaleMethod::kDisabled;
@@ -169,22 +169,27 @@ Upscaling::UpscaleMethod Upscaling::GetUpscaleMethod(bool a_checkMenu)
 
 bool Upscaling::ShouldUseFrameGeneration(bool a_checkMenu)
 {
-	if (a_checkMenu) {
-		return frameGenerationActive;
-	}
+	if constexpr (!kEnableDLSSG) {
+		std::ignore = a_checkMenu;
+		return false;
+	} else {
+		if (a_checkMenu) {
+			return frameGenerationActive;
+		}
 
-	const auto& settings = SettingsStore::GetSingleton()->settings;
+		const auto& liveSettings = SettingsStore::GetSingleton()->settings;
 
-	if (ShouldUseFSRFrameGeneration(a_checkMenu)) {
-		return false;
+		if (ShouldUseFSRFrameGeneration(a_checkMenu)) {
+			return false;
+		}
+		if ((liveSettings.frameGenerationMode == 0 && liveSettings.dynamicMFGEnabled == 0) || !featureDLSSG) {
+			return false;
+		}
+		if (a_checkMenu && ShouldBlockFrameGeneration()) {
+			return false;
+		}
+		return true;
 	}
-	if ((settings.frameGenerationMode == 0 && settings.dynamicMFGEnabled == 0) || !featureDLSSG) {
-		return false;
-	}
-	if (a_checkMenu && ShouldBlockFrameGeneration()) {
-		return false;
-	}
-	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,23 +240,28 @@ void Upscaling::GetTaggedTextureDebugResources(uint32_t, ID3D12Resource*& a_colo
 
 bool Upscaling::ShouldUseFSRFrameGeneration(bool a_checkMenu)
 {
-	if (a_checkMenu) {
-		return fsrFrameGenerationActive;
-	}
+	if constexpr (!kEnableDLSSG && !kForceFSRFrameGenerationForTesting) {
+		std::ignore = a_checkMenu;
+		return false;
+	} else {
+		if (a_checkMenu) {
+			return fsrFrameGenerationActive;
+		}
 
-	const auto& settings = SettingsStore::GetSingleton()->settings;
-	if (static_cast<UpscaleMethod>(settings.upscaleMethodPreference) == UpscaleMethod::kDisabled ||
-		(settings.frameGenerationMode == 0 && settings.dynamicMFGEnabled == 0) ||
-		!dx12Ready) {
-		return false;
-	}
+		const auto& liveSettings = SettingsStore::GetSingleton()->settings;
+		if (static_cast<UpscaleMethod>(liveSettings.upscaleMethodPreference) == UpscaleMethod::kDisabled ||
+			(liveSettings.frameGenerationMode == 0 && liveSettings.dynamicMFGEnabled == 0) ||
+			!dx12Ready) {
+			return false;
+		}
 
-	// When DLSS-G is available it owns frame generation; FSR-FG is the fallback.
-	if (featureDLSSG) {
-		return false;
+		// When DLSS-G is available it owns frame generation; FSR-FG is the fallback.
+		if (featureDLSSG) {
+			return false;
+		}
+		if (a_checkMenu && ShouldBlockFrameGeneration()) {
+			return false;
+		}
+		return true;
 	}
-	if (a_checkMenu && ShouldBlockFrameGeneration()) {
-		return false;
-	}
-	return true;
 }
