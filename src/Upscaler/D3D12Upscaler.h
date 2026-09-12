@@ -166,6 +166,14 @@ private:
 	// NGX creates the feature lazily; that creation must be submitted on its own,
 	// after the queue drains, and the uplift skipped for that one frame.
 	bool     neuralRenderingSkipFrame = false;
+	bool     neuralAfterUpscale = true;        // uplift the resolved image, not the raw scene
+	bool     loggedNeuralOrderFallback = false;
+	// Set for the frames where the uplift ran after the upscaler: present and
+	// DLSS-G read this instead of colorOutput. Null on every other frame.
+	ID3D12Resource* neuralColorReady = nullptr;
+
+	void ReportNeuralFailure();
+	void ReportNeuralRecovered();
 	// True while a menu/logo/loading screen is up (set from UpdateFromSettings).
 	bool     blocked = true;
 	// sharedFence value after the most recent Evaluate's D3D12 DLSS signal.

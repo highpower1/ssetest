@@ -283,6 +283,12 @@ namespace
 			}
 
 			ImGuiMCP::BeginDisabled(!nrUsable || settings.dlssNREnabled == 0);
+			static constexpr std::array nrOrders{ "Before upscaling", "After upscaling" };
+			changed |= ComboSetting(
+				"NR Order", settings.dlssNRAfterUpscale, nrOrders,
+				"Before: the upscaler's temporal resolve averages most of the uplift back out, so it "
+				"costs frame time for very little. After: the detail stays on screen, but it needs "
+				"Native AA quality (render and display resolution must match).");
 			changed |= SliderFloatSetting(
 				"NR Intensity", settings.dlssNRIntensity, 0.0f, 1.0f, "%.2f",
 				"Overall strength of the uplift. 1.0 is NVIDIA's neutral value.");

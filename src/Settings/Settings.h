@@ -58,6 +58,11 @@ public:
 		uint32_t dlssNRStyle = 0;
 		uint32_t dlssNRUseAutoMask = 0;
 		uint32_t dlssNRPassCount = 1;          // 1..3; more passes = stronger, slower
+		// 0 = before the upscaler, 1 = after it. Before means DLSS's temporal
+		// resolve runs over the uplift and largely averages the added detail back
+		// out, so after is the default. After needs display-resolution guides, so
+		// it only applies when the render and display sizes match.
+		uint32_t dlssNRAfterUpscale = 1;
 		float    dlssNRIntensity = 1.0f;
 		float    dlssNRLocalToneStrength = 1.0f;
 		float    dlssNRLocalStructureStrength = 1.0f;

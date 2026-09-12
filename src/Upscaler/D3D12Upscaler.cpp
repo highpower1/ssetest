@@ -317,7 +317,16 @@ namespace
 	}
 }
 
-ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const { return colorOutput ? colorOutput->resource12.get() : nullptr; }
+// The final pre-UI scene colour: the uplift's output when Neural Rendering ran
+// after the upscaler this frame, otherwise the upscaler's own output. Present
+// and DLSS-G both go through here so they always see the same image.
+ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const
+{
+	if (neuralColorReady) {
+		return neuralColorReady;
+	}
+	return colorOutput ? colorOutput->resource12.get() : nullptr;
+}
 ID3D12Resource* D3D12Upscaler::GetMotionVectors12() const { return motionVectors ? motionVectors->resource12.get() : nullptr; }
 ID3D12Resource* D3D12Upscaler::GetDepth12() const { return depth ? depth->resource12.get() : nullptr; }
 ID3D12Fence* D3D12Upscaler::GetWorkFence() const { return sharedFence.get(); }
@@ -407,6 +416,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	// DLSS 5 Neural Rendering. Like RR this is a DLSS-path option, and only ever
 	// true once a backend (Streamline plugin or direct NGX) actually came up.
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
+	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
@@ -418,6 +428,22 @@ void D3D12Upscaler::UpdateFromSettings()
 	// Method off, or a native-AA quality on the FSR path (FSR has no DLAA), means
 	// render at full res (no DRS). DLSS keeps DLAA at quality 0.
 	renderScale = (method == 0) ? 1.0f : RenderScaleForQuality(qualityMode);
+}
+
+void D3D12Upscaler::ReportNeuralFailure()
+{
+	if (!neuralRenderingFailed) {
+		neuralRenderingFailed = true;
+		logger::warn("[DLSS-NR] Uplift evaluation failed; the frame is presented without it");
+	}
+}
+
+void D3D12Upscaler::ReportNeuralRecovered()
+{
+	if (neuralRenderingFailed) {
+		neuralRenderingFailed = false;
+		logger::info("[DLSS-NR] Uplift recovered");
+	}
 }
 
 bool D3D12Upscaler::EnsureNeuralColor()
@@ -585,34 +611,51 @@ void D3D12Upscaler::Evaluate()
 		bool ok = false;
 		bool sharpened = false;
 
-		// ---- DLSS 5 Neural Rendering ("uplift"), ahead of the upscaler --------
-		// Runs on the render-resolution scene colour so the upscaler resolves the
-		// uplifted image. On success the upscaler's input swaps to neuralColor;
-		// on any failure it stays colorInput and the frame is unaffected.
+		// ---- DLSS 5 Neural Rendering ("uplift") ------------------------------
+		// Running the uplift BEFORE the upscaler means DLSS's temporal resolve
+		// then averages most of the added detail back out -- it costs the frame
+		// time and shows almost nothing. Running it AFTER leaves the detail on
+		// screen, but the guides must then be display resolution, which our
+		// render-resolution motion vectors and depth only are when the upscaler
+		// is not actually scaling. So: after by default, before when scaling.
 		ID3D12Resource* upscalerInput = colorInput->resource12.get();
+		neuralColorReady = nullptr;
 		neuralRenderingActive = false;
-		if (method == 2 && neuralRendering && EnsureNeuralColor()) {
-			auto parameters = Streamline::MakeDLSSNRParameters();
-			parameters.color = colorInput->resource12.get();
-			parameters.output = neuralColor.get();
-			parameters.motionVectors = motionVectors->resource12.get();
-			parameters.depth = depth->resource12.get();
-			parameters.inputWidth = parameters.outputWidth = parameters.guideWidth = GetRenderWidth();
-			parameters.inputHeight = parameters.outputHeight = parameters.guideHeight = GetRenderHeight();
-			// Skyrim's motion vectors are normalised screen space (Streamline runs
-			// them at mvecScale 1,1); NGX wants pixels, so scale by the render size.
-			parameters.motionVectorScaleX = static_cast<float>(GetRenderWidth());
-			parameters.motionVectorScaleY = static_cast<float>(GetRenderHeight());
-			parameters.depthInverted = false;
-			parameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
-			parameters.reset = neuralRenderingSkipFrame;
 
-			if (sl->NeedsDLSSNRPreparation(parameters)) {
-				// NGX feature creation must not share a submission with an
-				// evaluation, and the queue has to be idle first. We already
-				// waited on the work fence above, so the queue is drained here:
-				// record creation alone, submit it, wait, and start a fresh list.
-				const bool prepared = sl->PrepareDLSSNR(commandList.get(), parameters);
+		nvngx::dlss_nr::D3D12EvaluationParameters nrParameters{};
+		bool       nrWanted = method == 2 && neuralRendering && EnsureNeuralColor();
+		const bool nrGuidesAreDisplayRes = GetRenderWidth() == displayWidth && GetRenderHeight() == displayHeight;
+		const bool nrAfterUpscale = neuralAfterUpscale && nrGuidesAreDisplayRes;
+		if (nrWanted && neuralAfterUpscale && !nrGuidesAreDisplayRes && !loggedNeuralOrderFallback) {
+			loggedNeuralOrderFallback = true;
+			logger::info("[DLSS-NR] Uplift asked to run after the upscaler, but the guides are render resolution ({}x{} vs {}x{}); running before it instead",
+				GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight);
+		}
+
+		if (nrWanted) {
+			const auto nrWidth = nrAfterUpscale ? displayWidth : GetRenderWidth();
+			const auto nrHeight = nrAfterUpscale ? displayHeight : GetRenderHeight();
+
+			nrParameters = Streamline::MakeDLSSNRParameters();
+			nrParameters.motionVectors = motionVectors->resource12.get();
+			nrParameters.depth = depth->resource12.get();
+			nrParameters.inputWidth = nrParameters.outputWidth = nrParameters.guideWidth = nrWidth;
+			nrParameters.inputHeight = nrParameters.outputHeight = nrParameters.guideHeight = nrHeight;
+			// Skyrim's motion vectors are normalised screen space (Streamline runs
+			// them at mvecScale 1,1); NGX wants pixels, so scale by the guide size.
+			nrParameters.motionVectorScaleX = static_cast<float>(nrWidth);
+			nrParameters.motionVectorScaleY = static_cast<float>(nrHeight);
+			nrParameters.depthInverted = false;
+			nrParameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			nrParameters.reset = neuralRenderingSkipFrame;
+
+			// NGX creates the feature lazily and that creation must not share a
+			// submission with an evaluation. Handle it here, before any of this
+			// frame's work is recorded: we already waited on the work fence above,
+			// so the queue is idle. Record creation alone, submit it, wait, and
+			// start a fresh list.
+			if (sl->NeedsDLSSNRPreparation(nrParameters)) {
+				const bool prepared = sl->PrepareDLSSNR(commandList.get(), nrParameters);
 				DX::ThrowIfFailed(commandList->Close());
 				ID3D12CommandList* prepareLists[] = { commandList.get() };
 				commandQueue->ExecuteCommandLists(1, prepareLists);
@@ -630,20 +673,26 @@ void D3D12Upscaler::Evaluate()
 				// Creation changes the working set: let one plain frame through
 				// before evaluating the new feature.
 				neuralRenderingSkipFrame = true;
-				logger::info("[DLSS-NR] Feature creation submitted prepared={} input={}x{} passes={}",
-					prepared, parameters.inputWidth, parameters.inputHeight, parameters.passCount);
+				nrWanted = false;
+				logger::info("[DLSS-NR] Feature creation submitted prepared={} size={}x{} passes={} order={}",
+					prepared, nrWidth, nrHeight, nrParameters.passCount, nrAfterUpscale ? "after" : "before");
 			} else if (neuralRenderingSkipFrame) {
 				neuralRenderingSkipFrame = false;
-			} else if (sl->EvaluateDLSSNR(commandList.get(), parameters)) {
+				nrWanted = false;
+			}
+		}
+
+		// Uplift the scene before the upscaler reads it. On success the upscaler's
+		// input swaps to neuralColor; on failure it stays colorInput, unaffected.
+		if (nrWanted && !nrAfterUpscale) {
+			nrParameters.color = colorInput->resource12.get();
+			nrParameters.output = neuralColor.get();
+			if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
 				upscalerInput = neuralColor.get();
 				neuralRenderingActive = true;
-				if (neuralRenderingFailed) {
-					neuralRenderingFailed = false;
-					logger::info("[DLSS-NR] Uplift recovered");
-				}
-			} else if (!neuralRenderingFailed) {
-				neuralRenderingFailed = true;
-				logger::warn("[DLSS-NR] Uplift evaluation failed; the frame falls through to the upscaler unchanged");
+				ReportNeuralRecovered();
+			} else {
+				ReportNeuralFailure();
 			}
 		}
 
@@ -759,6 +808,21 @@ void D3D12Upscaler::Evaluate()
 			Transition(commandList.get(), colorOutput->resource12.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
 		}
 
+		// Uplift the resolved image. This is the ordering that actually shows on
+		// screen, because nothing temporal runs after it to average it away.
+		if (ok && nrWanted && nrAfterUpscale) {
+			nrParameters.color = colorOutput->resource12.get();
+			nrParameters.output = neuralColor.get();
+			if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
+				// Present and DLSS-G read this instead of the upscaler's output.
+				neuralColorReady = neuralColor.get();
+				neuralRenderingActive = true;
+				ReportNeuralRecovered();
+			} else {
+				ReportNeuralFailure();
+			}
+		}
+
 		DX::ThrowIfFailed(commandList->Close());
 		ID3D12CommandList* lists[] = { commandList.get() };
 		commandQueue->ExecuteCommandLists(1, lists);
@@ -778,7 +842,7 @@ void D3D12Upscaler::Evaluate()
 					// Keep the upscaled scene on D3D12 as the final present color,
 					// and clear kMAIN so the game draws UI-only onto black; the proxy
 					// present composites the two (D3D12UIComposite).
-					DX12SwapChain::GetSingleton()->SetPresentOverride(colorOutput->resource12.get());
+					DX12SwapChain::GetSingleton()->SetPresentOverride(GetHudlessColor12());
 					if (auto* rtv = Game::GetRenderTargetRTV(RE::RENDER_TARGET::kMAIN)) {
 						const float black[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 						d3d11Context4->ClearRenderTargetView(rtv, black);
