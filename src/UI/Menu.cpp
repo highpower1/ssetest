@@ -1,0 +1,291 @@
+#include "PCH.h"
+
+#include "UI/Menu.h"
+
+#include "Settings/Settings.h"
+#include "Neural/NeuralRendering.h"
+
+#include "SKSEMenuFramework.h"
+
+#include <array>
+#include <mutex>
+#include <optional>
+
+// ===========================================================================
+// SKSE Menu Framework 3 settings page.
+//
+// Ported from the Fallout 4 project's UpscalingMenu.cpp. The F4SE Menu
+// Framework and SKSE Menu Framework 3 share the same "MCP" ImGui binding
+// namespace (ImGuiMCP), so the widget code carries over unchanged; only the
+// framework registration and lifecycle events are swapped
+// (F4SEMenuFramework -> SKSEMenuFramework) and settings are read from the
+// decoupled SettingsStore instead of the not-yet-ported Upscaling core.
+// ===========================================================================
+
+namespace
+{
+	using Settings = SettingsStore::Settings;
+
+	std::mutex   g_stateMutex;
+	Settings     g_editSettings;
+	bool         g_editInitialized = false;
+	bool         g_dirty = false;
+	bool         g_registered = false;
+
+	SKSEMenuFramework::Model::Event* g_menuEvent = nullptr;
+
+	void ShowHelp(const char* a_help)
+	{
+		if (ImGuiMCP::IsItemHovered()) {
+			ImGuiMCP::SetTooltip("%s", a_help);
+		}
+	}
+
+	template <std::size_t N>
+	bool ComboSetting(const char* a_label, uint32_t& a_value, const std::array<const char*, N>& a_items, const char* a_help)
+	{
+		int value = static_cast<int>(a_value);
+		const bool changed = ImGuiMCP::Combo(a_label, &value, a_items.data(), static_cast<int>(a_items.size()));
+		ShowHelp(a_help);
+		if (changed) {
+			a_value = static_cast<uint32_t>(value);
+		}
+		return changed;
+	}
+
+	bool CheckboxSetting(const char* a_label, uint32_t& a_value, const char* a_help)
+	{
+		bool value = a_value != 0;
+		const bool changed = ImGuiMCP::Checkbox(a_label, &value);
+		ShowHelp(a_help);
+		if (changed) {
+			a_value = value ? 1u : 0u;
+		}
+		return changed;
+	}
+
+	bool SliderIntSetting(const char* a_label, uint32_t& a_value, int a_min, int a_max, const char* a_format, const char* a_help)
+	{
+		int value = static_cast<int>(a_value);
+		const bool changed = ImGuiMCP::SliderInt(a_label, &value, a_min, a_max, a_format);
+		ShowHelp(a_help);
+		if (changed) {
+			a_value = static_cast<uint32_t>(value);
+		}
+		return changed;
+	}
+
+	bool SliderFloatSetting(const char* a_label, float& a_value, float a_min, float a_max, const char* a_format, const char* a_help)
+	{
+		const bool changed = ImGuiMCP::SliderFloat(a_label, &a_value, a_min, a_max, a_format);
+		ShowHelp(a_help);
+		return changed;
+	}
+
+	void InitializeEditState()
+	{
+		std::scoped_lock lock(g_stateMutex);
+		g_editSettings = SettingsStore::GetSingleton()->settings;
+		g_editInitialized = true;
+		g_dirty = false;
+	}
+
+	void QueueSettingsReload(bool a_force)
+	{
+		if (const auto tasks = SKSE::GetTaskInterface()) {
+			tasks->AddTask([a_force] {
+				if (a_force) {
+					SettingsStore::GetSingleton()->Load();
+				} else {
+					SettingsStore::GetSingleton()->ReloadIfChanged();
+				}
+			});
+		} else if (a_force) {
+			SettingsStore::GetSingleton()->Load();
+		} else {
+			SettingsStore::GetSingleton()->ReloadIfChanged();
+		}
+	}
+
+	void __stdcall OnMenuEvent(SKSEMenuFramework::Model::EventType a_type)
+	{
+		if (a_type == SKSEMenuFramework::Model::kOpenMenu) {
+			InitializeEditState();
+			return;
+		}
+
+		if (a_type != SKSEMenuFramework::Model::kCloseMenu) {
+			return;
+		}
+
+		std::optional<Settings> settingsToSave;
+		{
+			std::scoped_lock lock(g_stateMutex);
+			if (g_editInitialized && g_dirty) {
+				settingsToSave = g_editSettings;
+			}
+			g_editInitialized = false;
+			g_dirty = false;
+		}
+
+		if (settingsToSave) {
+			if (!SettingsStore::GetSingleton()->Save(*settingsToSave)) {
+				logger::error("[Menu] Could not save SkyrimUpscaler settings");
+				return;
+			}
+			// Mirror the neural toggles into the live NeuralRendering module.
+			auto* neural = NeuralRendering::GetSingleton();
+			neural->settings.enableRayReconstruction = settingsToSave->neuralRayReconstruction != 0;
+			neural->settings.enableExternalModules = settingsToSave->neuralExternalModules != 0;
+			QueueSettingsReload(true);
+		} else {
+			QueueSettingsReload(false);
+		}
+	}
+
+	void __stdcall RenderSettings()
+	{
+		std::scoped_lock lock(g_stateMutex);
+		if (!g_editInitialized) {
+			g_editSettings = SettingsStore::GetSingleton()->settings;
+			g_editInitialized = true;
+			g_dirty = false;
+		}
+
+		auto& settings = g_editSettings;
+		bool changed = false;
+
+		ImGuiMCP::TextWrapped("Changes are saved and applied when the Mod Control Panel closes.");
+
+		// TODO(port): once the Streamline backend (src/Render/Streamline.cpp) is
+		// compiled in, show live availability here:
+		//   Streamline* sl = Streamline::GetSingleton();
+		//   ImGuiMCP::TextDisabled("Runtime: DLSS %s | Frame Generation %s | Reflex %s", ...);
+
+		ImGuiMCP::SeparatorText("Upscaling");
+		static constexpr std::array upscaleMethods{ "Disabled", "AMD FSR", "NVIDIA DLSS" };
+		changed |= ComboSetting(
+			"Upscale Method",
+			settings.upscaleMethodPreference,
+			upscaleMethods,
+			"Selects the preferred temporal upscaler. DLSS falls back to FSR when unavailable.");
+
+		static constexpr std::array qualityModes{ "Native AA", "Quality", "Balanced", "Performance", "Ultra Performance" };
+		changed |= ComboSetting(
+			"Quality Mode",
+			settings.qualityMode,
+			qualityModes,
+			"Controls the render resolution used by the temporal upscaler.");
+		changed |= SliderFloatSetting(
+			"Sharpness",
+			settings.sharpness,
+			0.0f,
+			1.0f,
+			"%.2f",
+			"Controls NVIDIA Image Scaling sharpen for DLSS and RCAS for FSR.");
+
+		ImGuiMCP::SeparatorText("Frame Generation and Latency");
+		const bool upscalingDisabled = settings.upscaleMethodPreference == static_cast<uint32_t>(SettingsStore::UpscaleMethod::kDisabled);
+		ImGuiMCP::BeginDisabled(upscalingDisabled);
+		static constexpr std::array frameGenerationModes{ "Disabled", "On", "Auto" };
+		changed |= ComboSetting(
+			"Frame Generation",
+			settings.frameGenerationMode,
+			frameGenerationModes,
+			"Uses the selected vendor's frame generation path when supported.");
+		ImGuiMCP::EndDisabled();
+
+		const bool frameGenerationDisabled = upscalingDisabled || settings.frameGenerationMode == 0;
+		const bool dlssSelected = settings.upscaleMethodPreference == static_cast<uint32_t>(SettingsStore::UpscaleMethod::kDLSS);
+		ImGuiMCP::BeginDisabled(frameGenerationDisabled || !dlssSelected);
+		static constexpr std::array generatedFrameCounts{ "1 (2x)", "2 (3x)", "3 (4x)", "4 (5x)", "5 (6x)" };
+		changed |= ComboSetting(
+			"Generated Frames",
+			settings.dlssgGeneratedFrames,
+			generatedFrameCounts,
+			"Controls the requested DLSS generated-frame multiplier. The runtime clamps unsupported values.");
+		changed |= CheckboxSetting(
+			"Dynamic Multi Frame Generation",
+			settings.dynamicMFGEnabled,
+			"Lets Streamline dynamically select the generated-frame multiplier when supported.");
+		ImGuiMCP::BeginDisabled(settings.dynamicMFGEnabled == 0);
+		changed |= SliderIntSetting(
+			"Dynamic Target FPS",
+			settings.dynamicMFGTargetFPS,
+			0,
+			500,
+			"%d FPS",
+			"Target output frame rate. Zero lets Streamline use the display refresh rate.");
+		ImGuiMCP::EndDisabled();
+		ImGuiMCP::EndDisabled();
+
+		static constexpr std::array reflexModes{ "Off", "On", "On + Boost" };
+		changed |= ComboSetting(
+			"NVIDIA Reflex",
+			settings.reflexMode,
+			reflexModes,
+			"Controls NVIDIA Reflex low-latency mode. Frame generation forces at least On while active.");
+
+		ImGuiMCP::SeparatorText("DLSS");
+		ImGuiMCP::BeginDisabled(!dlssSelected);
+		static constexpr std::array dlssPresets{ "Recommended", "Default", "K", "M", "L" };
+		changed |= ComboSetting(
+			"Model Preset",
+			settings.dlssModelPreset,
+			dlssPresets,
+			"Recommended uses K for DLAA/Quality/Balanced, M for Performance, and L for Ultra Performance.");
+		ImGuiMCP::EndDisabled();
+
+		ImGuiMCP::SeparatorText("Neural Rendering");
+		changed |= CheckboxSetting(
+			"DLSS Ray Reconstruction",
+			settings.neuralRayReconstruction,
+			"Enables the DLSS-D neural denoiser (Ray Reconstruction). Requires an RTX GPU.");
+		changed |= CheckboxSetting(
+			"External Neural Modules",
+			settings.neuralExternalModules,
+			"Loads RenoDX-style DLLs from Data/SKSE/Plugins/SkyrimUpscaler/Neural/. Restart to apply.");
+
+		ImGuiMCP::SeparatorText("Diagnostics");
+		static constexpr std::array osdModes{ "Disabled", "Compact", "Detailed" };
+		changed |= ComboSetting(
+			"On-Screen Display",
+			settings.osdMode,
+			osdModes,
+			"Shows D3D12 swapchain and upscaler status while DLSS or FSR is active.");
+		changed |= CheckboxSetting(
+			"Tagged Texture Debug View",
+			settings.taggedTextureDebug,
+			"Shows the color, depth, motion-vector, and final-image resources used by the D3D12 upscaler.");
+		changed |= CheckboxSetting(
+			"Image-Space Effect Log",
+			settings.imageSpaceEffectLog,
+			"Logs unique image-space effects dispatched inside the ENB native-resolution scope.");
+
+		g_dirty |= changed;
+	}
+}
+
+void UI::Menu::Register()
+{
+	if (g_registered) {
+		return;
+	}
+
+	if (!SKSEMenuFramework::IsInstalled()) {
+		logger::warn("[Menu] SKSE Menu Framework is not installed; in-game settings page is unavailable");
+		return;
+	}
+
+	SKSEMenuFramework::SetSection("SkyrimUpscaler");
+	SKSEMenuFramework::AddSectionItem("Settings", RenderSettings);
+
+	// priority 0.0 -- default ordering among listeners.
+	g_menuEvent = SKSEMenuFramework::AddEvent(OnMenuEvent, 0.0f);
+	if (!g_menuEvent) {
+		logger::warn("[Menu] SKSE Menu Framework did not expose lifecycle events; settings still editable but auto-save on close is unavailable");
+	}
+
+	g_registered = true;
+	logger::info("[Menu] Registered SkyrimUpscaler settings with SKSE Menu Framework 3");
+}

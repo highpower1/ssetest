@@ -1,0 +1,65 @@
+#pragma once
+
+#include <cstdint>
+#include <filesystem>
+#include <mutex>
+
+// ===========================================================================
+// Settings store.
+//
+// Decouples the UI (SKSE Menu Framework 3) from the not-yet-ported upscaler
+// core. The menu reads/writes this store; once Upscaling.cpp is ported it
+// reads the very same struct, so nothing about the menu has to change.
+//
+// The field set mirrors the Fallout 4 project's Upscaling::Settings so the
+// future port is a drop-in.
+// ===========================================================================
+
+class SettingsStore
+{
+public:
+	static SettingsStore* GetSingleton()
+	{
+		static SettingsStore singleton;
+		return &singleton;
+	}
+
+	enum class UpscaleMethod : uint32_t
+	{
+		kDisabled = 0,
+		kFSR = 1,
+		kDLSS = 2,
+	};
+
+	struct Settings
+	{
+		uint32_t upscaleMethodPreference = static_cast<uint32_t>(UpscaleMethod::kDLSS);
+		uint32_t qualityMode = 1;             // 0=Native AA,1=Quality,2=Balanced,3=Perf,4=Ultra Perf
+		uint32_t frameGenerationMode = 0;     // 0=Disabled,1=On,2=Auto
+		uint32_t dlssgGeneratedFrames = 0;    // 0=2x ... 4=6x
+		uint32_t dynamicMFGEnabled = 0;
+		uint32_t dynamicMFGTargetFPS = 300;
+		uint32_t reflexMode = 1;              // 0=Off,1=On,2=On+Boost
+		uint32_t dlssModelPreset = 0;         // 0=Recommended,1=Default,2=K,3=M,4=L
+		uint32_t osdMode = 0;                 // 0=Off,1=Compact,2=Detailed
+		uint32_t taggedTextureDebug = 0;
+		uint32_t imageSpaceEffectLog = 0;
+		float    sharpness = 0.2f;
+
+		// Neural rendering (this project's additions)
+		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR
+		uint32_t neuralExternalModules = 1;    // load RenoDX-style DLLs from Neural/
+	};
+
+	Settings settings;
+
+	void Load();
+	bool Save(const Settings& a_settings);
+	void ReloadIfChanged();
+
+	std::mutex mutex;
+
+private:
+	std::filesystem::file_time_type lastWriteTime{};
+	[[nodiscard]] std::filesystem::path GetIniPath() const;
+};

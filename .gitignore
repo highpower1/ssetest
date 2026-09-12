@@ -1,0 +1,20 @@
+# build output
+/build/
+/.xmake/
+/.vs/
+/vsxmake*/
+*.user
+*.pdb
+
+# third-party SDKs / vendored deps (placed manually — see PORTING.md / CODEX_HANDOFF.md)
+/extern/Streamline/
+/extern/FidelityFX-SDK/
+/lib/commonlibsse-ng/
+/include/detours/
+
+# packaged mod + large artifacts
+/dist/
+/package/
+
+# logs
+*.log
