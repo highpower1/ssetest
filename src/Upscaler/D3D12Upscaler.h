@@ -142,6 +142,7 @@ private:
 	// DLSS-NR writes here rather than in place, and the upscaler then reads it
 	// instead of colorInput. D3D12-only: nothing on the D3D11 side needs it.
 	winrt::com_ptr<ID3D12Resource>           neuralColor;
+	winrt::com_ptr<ID3D12DescriptorHeap>     neuralColorRTVHeap;  // one RTV, for the debug clear
 	bool EnsureNeuralColor();
 
 	uint32_t displayWidth = 0;
@@ -176,6 +177,7 @@ private:
 	uint32_t neuralFramesTotal = 0;
 	uint32_t neuralFramesActive = 0;
 
+	void FillNeuralColorForDebug();
 	void ReportNeuralFailure();
 	void ReportNeuralRecovered();
 	// True while a menu/logo/loading screen is up (set from UpdateFromSettings).

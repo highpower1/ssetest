@@ -447,6 +447,37 @@ void D3D12Upscaler::ReportNeuralRecovered()
 	}
 }
 
+// Diagnostic: fill the uplift's target with flat magenta instead of running the
+// uplift, and route it onward as if the uplift had succeeded.
+//
+// The first attempt at this filled the target with the pre-upscale scene, which
+// was useless: at Native AA that image is the same size and nearly the same
+// picture as the upscaler's output, so "no visible change" meant nothing. A
+// colour that appears nowhere in Skyrim cannot be mistaken for anything.
+//
+// Magenta on screen => the target reaches the screen, so the uplift is
+// returning its input unchanged. No magenta => the target never gets there.
+void D3D12Upscaler::FillNeuralColorForDebug()
+{
+	if (!neuralColor || !neuralColorRTVHeap) {
+		return;
+	}
+
+	Transition(commandList.get(), neuralColor.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	constexpr float kMagenta[4] = { 1.0f, 0.0f, 1.0f, 1.0f };
+	commandList->ClearRenderTargetView(neuralColorRTVHeap->GetCPUDescriptorHandleForHeapStart(), kMagenta, 0, nullptr);
+	Transition(commandList.get(), neuralColor.get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+
+	neuralColorReady = neuralColor.get();
+	neuralRenderingActive = true;
+	if (!loggedNeuralDebugBypass) {
+		loggedNeuralDebugBypass = true;
+		logger::warn("[DLSS-NR] DEBUG BYPASS on: the uplift target is being cleared to magenta and presented. "
+					 "Magenta on screen means the target reaches the screen and the uplift is a no-op; "
+					 "no magenta means the target never reaches the screen.");
+	}
+}
+
 bool D3D12Upscaler::EnsureNeuralColor()
 {
 	if (neuralColor) {
@@ -469,16 +500,34 @@ bool D3D12Upscaler::EnsureNeuralColor()
 	desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
 	desc.SampleDesc.Count = 1;
 	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+	// RENDER_TARGET as well as UAV: the diagnostic bypass clears this to a flat
+	// colour, which is the only way to tell "the target never reaches the screen"
+	// apart from "the uplift returned its input unchanged".
+	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+	D3D12_CLEAR_VALUE clear{};
+	clear.Format = desc.Format;
 
 	const auto hr = d3d12Device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-		D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(neuralColor.put()));
+		D3D12_RESOURCE_STATE_COMMON, &clear, IID_PPV_ARGS(neuralColor.put()));
 	if (FAILED(hr)) {
 		logger::warn("[DLSS-NR] Could not create the uplift target {}x{}: 0x{:08X}",
 			displayWidth, displayHeight, static_cast<uint32_t>(hr));
 		neuralColor = nullptr;
 		return false;
 	}
+
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc{};
+	rtvHeapDesc.NumDescriptors = 1;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	if (FAILED(d3d12Device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(neuralColorRTVHeap.put())))) {
+		logger::warn("[DLSS-NR] Could not create the uplift target's RTV heap; the debug bypass will not work");
+		neuralColorRTVHeap = nullptr;
+	} else {
+		d3d12Device->CreateRenderTargetView(neuralColor.get(), nullptr,
+			neuralColorRTVHeap->GetCPUDescriptorHandleForHeapStart());
+	}
+
 	logger::info("[DLSS-NR] Uplift target created {}x{}", displayWidth, displayHeight);
 	return true;
 }
@@ -693,7 +742,10 @@ void D3D12Upscaler::Evaluate()
 		if (nrWanted && !nrAfterUpscale) {
 			nrParameters.color = colorInput->resource12.get();
 			nrParameters.output = neuralColor.get();
-			if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
+			if (neuralDebugBypass) {
+				FillNeuralColorForDebug();
+				upscalerInput = neuralColor.get();
+			} else if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
 				upscalerInput = neuralColor.get();
 				neuralRenderingActive = true;
 				ReportNeuralRecovered();
@@ -828,19 +880,7 @@ void D3D12Upscaler::Evaluate()
 			nrParameters.color = colorOutput->resource12.get();
 			nrParameters.output = neuralColor.get();
 			if (neuralDebugBypass) {
-				// Diagnostic: don't run the uplift, just put something unmistakably
-				// different in its target and present that. colorInput shares the
-				// target's format, and at render resolution it fills only part of
-				// the texture -- so if the screen changes, the target reaches
-				// present and the uplift itself is returning its input unchanged.
-				// If the screen does NOT change, the target never reaches present.
-				commandList->CopyResource(neuralColor.get(), colorInput->resource12.get());
-				neuralColorReady = neuralColor.get();
-				neuralRenderingActive = true;
-				if (!loggedNeuralDebugBypass) {
-					loggedNeuralDebugBypass = true;
-					logger::warn("[DLSS-NR] DEBUG BYPASS is on: presenting the uplift target filled with the pre-upscale scene, not an uplifted image");
-				}
+				FillNeuralColorForDebug();
 			} else if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
 				// Present and DLSS-G read this instead of the upscaler's output.
 				neuralColorReady = neuralColor.get();

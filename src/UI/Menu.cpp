@@ -322,10 +322,9 @@ namespace
 			changed |= CheckboxSetting(
 				"NR Debug: bypass uplift",
 				settings.dlssNRDebugBypass,
-				"Diagnostic. Skips the uplift but still sends its target to the screen, filled with the "
-				"pre-upscale scene. If the picture changes, the target reaches the screen and the uplift "
-				"is returning its input unchanged. If nothing changes, the target never reaches the screen. "
-				"Turn this back off afterwards.");
+				"Diagnostic. Skips the uplift and fills its target with flat magenta instead. "
+				"A magenta screen means the target reaches the screen and the uplift is doing nothing; "
+				"no magenta means the target never reaches the screen. Turn this back off afterwards.");
 			ImGuiMCP::EndDisabled();
 
 			changed |= CheckboxSetting(
