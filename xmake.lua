@@ -64,6 +64,8 @@ target("SkyrimUpscaler")
         "src/Render/Streamline.cpp",
         "src/Render/FidelityFX.cpp",
         "src/Render/D3D12UIComposite.cpp",
+        -- Ray Reconstruction guide buffers (Skyrim has no G-buffer of its own)
+        "src/Render/D3D12NeuralGBuffer.cpp",
         "src/Render/TaggedTextureDebug.cpp",
         "src/Render/OSD.cpp",
         "src/Render/DX12SwapChain.cpp")

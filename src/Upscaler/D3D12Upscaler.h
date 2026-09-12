@@ -145,6 +145,10 @@ private:
 	uint32_t qualityMode = 1;
 	uint32_t dlssPreset = 0;
 	float    sharpness = 0.0f;
+	// Ray Reconstruction (DLSS-D) in place of DLSS super resolution. Mirrored from
+	// the menu each frame, and only ever true when the feature actually came up.
+	bool     rayReconstruction = false;
+	bool     rayReconstructionFailed = false;  // latched so the fallback logs once, not every frame
 	// True while a menu/logo/loading screen is up (set from UpdateFromSettings).
 	bool     blocked = true;
 	// sharedFence value after the most recent Evaluate's D3D12 DLSS signal.

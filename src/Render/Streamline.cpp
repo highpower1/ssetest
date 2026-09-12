@@ -1019,6 +1019,11 @@ void Streamline::ResetOptionCaches()
 	currentD3D12DLSSOutputWidth = 0;
 	currentD3D12DLSSOutputHeight = 0;
 	currentD3D12DLSSModelPreset = std::numeric_limits<uint>::max();
+	currentD3D12DLSSDOptionsValid = false;
+	currentD3D12DLSSDMode = sl::DLSSMode::eOff;
+	currentD3D12DLSSDOutputWidth = 0;
+	currentD3D12DLSSDOutputHeight = 0;
+	currentD3D12DLSSDSharpness = -1.0f;
 	currentNISOptionsValid = false;
 	currentNISSharpness = -1.0f;
 }
@@ -1031,6 +1036,16 @@ bool Streamline::EnsureD3D12DLSSOptions(sl::DLSSMode a_mode, uint32_t a_outputWi
 		currentD3D12DLSSOutputHeight == a_outputHeight &&
 		currentD3D12DLSSModelPreset == a_dlssModelPreset) {
 		return true;
+	}
+
+	// DLSS super resolution and DLSS-RR are mutually exclusive on one viewport;
+	// turn RR off before claiming it, or Streamline keeps evaluating both.
+	if (currentD3D12DLSSDOptionsValid && slDLSSDSetOptions) {
+		sl::DLSSDOptions off{};
+		off.mode = sl::DLSSMode::eOff;
+		slDLSSDSetOptions(viewport, off);
+		currentD3D12DLSSDOptionsValid = false;
+		logger::info("[Streamline] DLSS-RR disabled: switching the viewport to super resolution");
 	}
 
 	const auto hadValidOptions = currentD3D12DLSSOptionsValid;
@@ -1054,6 +1069,160 @@ bool Streamline::EnsureD3D12DLSSOptions(sl::DLSSMode a_mode, uint32_t a_outputWi
 	if (hadValidOptions && lastTemporalResetFrameIndex != constantsFrameIndex) {
 		RequestTemporalReset();
 	}
+	return true;
+}
+
+bool Streamline::EnsureD3D12DLSSDOptions(sl::DLSSMode a_mode, uint32_t a_outputWidth, uint32_t a_outputHeight, float a_sharpness, const DirectX::XMMATRIX& a_worldToView)
+{
+	// The camera matrices change every frame, so unlike the SR options these must
+	// be pushed each frame; only log/reset history when the *configuration*
+	// changes.
+	const bool configurationChanged =
+		!currentD3D12DLSSDOptionsValid ||
+		currentD3D12DLSSDMode != a_mode ||
+		currentD3D12DLSSDOutputWidth != a_outputWidth ||
+		currentD3D12DLSSDOutputHeight != a_outputHeight ||
+		currentD3D12DLSSDSharpness != a_sharpness;
+
+	DirectX::XMVECTOR determinant{};
+	const auto        viewToWorld = DirectX::XMMatrixInverse(&determinant, a_worldToView);
+	if (!std::isfinite(DirectX::XMVectorGetX(determinant)) || DirectX::XMVectorGetX(determinant) == 0.0f) {
+		return false;
+	}
+
+	// Super resolution and RR cannot both own the viewport; release SR first.
+	if (configurationChanged && currentD3D12DLSSOptionsValid && slDLSSSetOptions) {
+		sl::DLSSOptions off{};
+		off.mode = sl::DLSSMode::eOff;
+		slDLSSSetOptions(viewport, off);
+		currentD3D12DLSSOptionsValid = false;
+		currentD3D12DLSSMode = sl::DLSSMode::eOff;
+		logger::info("[Streamline] DLSS super resolution disabled: switching the viewport to Ray Reconstruction");
+	}
+
+	sl::DLSSDOptions options{};
+	options.mode = a_mode;
+	options.outputWidth = a_outputWidth;
+	options.outputHeight = a_outputHeight;
+	options.sharpness = a_sharpness;
+	// kMAIN is R16G16B16A16_FLOAT scene colour before tonemapping.
+	options.colorBuffersHDR = sl::Boolean::eTrue;
+	// D3D12NeuralGBuffer writes roughness into the normal buffer's w channel.
+	options.normalRoughnessMode = sl::DLSSDNormalRoughnessMode::ePacked;
+	options.worldToCameraView = ToSLMatrix(a_worldToView);
+	options.cameraViewToWorld = ToSLMatrix(viewToWorld);
+
+	if (SL_FAILED(result, slDLSSDSetOptions(viewport, options))) {
+		if (configurationChanged) {
+			logger::warn("[Streamline] Could not set D3D12 DLSS-RR options: {}", magic_enum::enum_name(result));
+		}
+		currentD3D12DLSSDOptionsValid = false;
+		return false;
+	}
+
+	if (configurationChanged) {
+		const auto hadValidOptions = currentD3D12DLSSDOptionsValid;
+		currentD3D12DLSSDOptionsValid = true;
+		currentD3D12DLSSDMode = a_mode;
+		currentD3D12DLSSDOutputWidth = a_outputWidth;
+		currentD3D12DLSSDOutputHeight = a_outputHeight;
+		currentD3D12DLSSDSharpness = a_sharpness;
+		logger::info("[Streamline] DLSS-RR options set mode={} output={}x{} sharpness={}",
+			magic_enum::enum_name(a_mode), a_outputWidth, a_outputHeight, a_sharpness);
+		if (hadValidOptions && lastTemporalResetFrameIndex != constantsFrameIndex) {
+			RequestTemporalReset();
+		}
+	}
+	return true;
+}
+
+bool Streamline::UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness)
+{
+	if (!featureDLSSD || !slDLSSDSetOptions || !slEvaluateFeature || !slSetTagForFrame ||
+		!a_color || !a_outputColor || !a_motionVectors || !a_depth ||
+		!a_normalRoughness || !a_albedo || !a_specularAlbedo || !a_commandList || !a_frameToken) {
+		logger::warn(
+			"[Streamline] D3D12 DLSS-RR unavailable before tagging feature={} setOptions={} color={} output={} mvec={} depth={} normals={} albedo={} specular={} commandList={} frameToken={}",
+			featureDLSSD,
+			static_cast<bool>(slDLSSDSetOptions),
+			static_cast<void*>(a_color),
+			static_cast<void*>(a_outputColor),
+			static_cast<void*>(a_motionVectors),
+			static_cast<void*>(a_depth),
+			static_cast<void*>(a_normalRoughness),
+			static_cast<void*>(a_albedo),
+			static_cast<void*>(a_specularAlbedo),
+			static_cast<void*>(a_commandList),
+			static_cast<void*>(a_frameToken));
+		return false;
+	}
+
+	sl::DLSSMode dlssMode;
+	switch (a_qualityMode) {
+	case 1:
+		dlssMode = sl::DLSSMode::eMaxQuality;
+		break;
+	case 2:
+		dlssMode = sl::DLSSMode::eBalanced;
+		break;
+	case 3:
+		dlssMode = sl::DLSSMode::eMaxPerformance;
+		break;
+	case 4:
+		dlssMode = sl::DLSSMode::eUltraPerformance;
+		break;
+	default:
+		dlssMode = sl::DLSSMode::eDLAA;
+		break;
+	}
+
+	const auto outputWidth = static_cast<uint32_t>(a_displaySize.x);
+	const auto outputHeight = static_cast<uint32_t>(a_displaySize.y);
+	if (!EnsureD3D12DLSSDOptions(dlssMode, outputWidth, outputHeight, std::clamp(a_sharpness, 0.0f, 1.0f), a_worldToView)) {
+		return false;
+	}
+
+	sl::Extent lowResExtent{ 0, 0, static_cast<uint32_t>(a_renderSize.x), static_cast<uint32_t>(a_renderSize.y) };
+	sl::Extent fullExtent{ 0, 0, outputWidth, outputHeight };
+
+	sl::Resource colorIn = { sl::ResourceType::eTex2d, a_color, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource colorOut = { sl::ResourceType::eTex2d, a_outputColor, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource depth = { sl::ResourceType::eTex2d, a_depth, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource mvec = { sl::ResourceType::eTex2d, a_motionVectors, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource normalRoughness = { sl::ResourceType::eTex2d, a_normalRoughness, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource albedo = { sl::ResourceType::eTex2d, a_albedo, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+	sl::Resource specularAlbedo = { sl::ResourceType::eTex2d, a_specularAlbedo, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+
+	sl::ResourceTag resourceTags[] = {
+		{ &colorIn, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
+		{ &colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &fullExtent },
+		{ &depth, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent, &lowResExtent },
+		{ &mvec, sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent, &lowResExtent },
+		{ &normalRoughness, sl::kBufferTypeNormalRoughness, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
+		{ &albedo, sl::kBufferTypeAlbedo, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
+		{ &specularAlbedo, sl::kBufferTypeSpecularAlbedo, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
+	};
+
+	if (SL_FAILED(result, slSetTagForFrame(*a_frameToken, viewport, resourceTags, _countof(resourceTags), a_commandList))) {
+		logger::warn("[Streamline] Could not tag D3D12 DLSS-RR resources: {} token={} render={}x{} display={}x{}",
+			magic_enum::enum_name(result),
+			static_cast<uint32_t>(*a_frameToken),
+			lowResExtent.width, lowResExtent.height,
+			fullExtent.width, fullExtent.height);
+		return false;
+	}
+
+	sl::ViewportHandle       view(viewport);
+	const sl::BaseStructure* inputs[] = { &view };
+	if (SL_FAILED(result, slEvaluateFeature(sl::kFeatureDLSS_RR, *a_frameToken, inputs, _countof(inputs), a_commandList))) {
+		logger::warn("[Streamline] D3D12 DLSS-RR evaluate failed: {} token={} render={}x{} display={}x{}",
+			magic_enum::enum_name(result),
+			static_cast<uint32_t>(*a_frameToken),
+			lowResExtent.width, lowResExtent.height,
+			fullExtent.width, fullExtent.height);
+		return false;
+	}
+
 	return true;
 }
 

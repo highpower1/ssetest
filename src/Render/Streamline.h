@@ -4,6 +4,7 @@
 
 #include <utility>
 #include <d3d12.h>
+#include <DirectXMath.h>
 
 #pragma warning(push)
 #pragma warning(disable: 4471)
@@ -134,6 +135,17 @@ public:
 	// ========================================
 
 	bool UpscaleD3D12(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_sharpenedOutput, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_transparencyMask, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, DXGI_FORMAT a_colorFormat, DXGI_FORMAT a_motionVectorFormat, DXGI_FORMAT a_depthFormat, uint a_qualityMode, float a_sharpness, uint a_dlssModelPreset, bool* a_sharpened);
+
+	/**
+	 * @brief Upscale + denoise with DLSS Ray Reconstruction (DLSS-D) instead of
+	 *        plain super resolution.
+	 *
+	 * Same colour/depth/motion inputs as UpscaleD3D12, plus the synthetic
+	 * G-buffer from D3D12NeuralGBuffer (world-space normals with roughness packed
+	 * into .w, diffuse albedo, specular albedo). a_worldToView is the game's view
+	 * matrix; RR needs it and its inverse to interpret the normals.
+	 */
+	bool UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness);
 
 	/**
 	 * @brief Update Streamline constants for current frame
@@ -287,6 +299,7 @@ private:
 	bool ApplyNISSharpen(ID3D11Resource* a_inputColor, ID3D11Resource* a_outputColor, ID3D11DeviceContext* a_context, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
 	bool ApplyNISSharpenD3D12(ID3D12Resource* a_inputColor, ID3D12Resource* a_outputColor, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
 	bool EnsureD3D12DLSSOptions(sl::DLSSMode a_mode, uint32_t a_outputWidth, uint32_t a_outputHeight, uint a_dlssModelPreset);
+	bool EnsureD3D12DLSSDOptions(sl::DLSSMode a_mode, uint32_t a_outputWidth, uint32_t a_outputHeight, float a_sharpness, const DirectX::XMMATRIX& a_worldToView);
 	bool EnsureNISOptions(float a_sharpness, std::string_view a_logContext);
 	void ResetOptionCaches();
 	void SetPCLMarker(sl::PCLMarker a_marker, sl::FrameToken* a_frameToken = nullptr);
@@ -323,6 +336,12 @@ private:
 	uint32_t currentD3D12DLSSOutputWidth = 0;
 	uint32_t currentD3D12DLSSOutputHeight = 0;
 	uint currentD3D12DLSSModelPreset = std::numeric_limits<uint>::max();
+
+	bool currentD3D12DLSSDOptionsValid = false;
+	sl::DLSSMode currentD3D12DLSSDMode = sl::DLSSMode::eOff;
+	uint32_t currentD3D12DLSSDOutputWidth = 0;
+	uint32_t currentD3D12DLSSDOutputHeight = 0;
+	float currentD3D12DLSSDSharpness = -1.0f;
 	bool currentNISOptionsValid = false;
 	float currentNISSharpness = -1.0f;
 	uint32_t pclStatsWindowMessage = 0;

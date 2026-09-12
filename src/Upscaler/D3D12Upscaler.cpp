@@ -4,6 +4,7 @@
 
 #include "Game/Renderer.h"
 #include "Game/Util.h"
+#include "Render/D3D12NeuralGBuffer.h"
 #include "Render/DX12SwapChain.h"  // D3D11D3D12SharedTexture
 #include "Render/Streamline.h"
 #include "Render/FidelityFX.h"
@@ -400,6 +401,9 @@ void D3D12Upscaler::UpdateFromSettings()
 	qualityMode = s.qualityMode;          // 0=Native/DLAA .. 4=Ultra
 	dlssPreset = s.dlssModelPreset;
 	sharpness = s.sharpness;
+	// Ray Reconstruction replaces DLSS super resolution with the DLSS-D denoiser.
+	// It is a DLSS-path-only option and needs the feature to have come up.
+	rayReconstruction = s.neuralRayReconstruction != 0 && Streamline::GetSingleton()->featureDLSSD;
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
@@ -542,7 +546,68 @@ void D3D12Upscaler::Evaluate()
 		bool ok = false;
 		bool sharpened = false;
 
-		if (method == 2) {
+		if (method == 2 && rayReconstruction) {
+			// NVIDIA DLSS Ray Reconstruction. Skyrim has no G-buffer, so synthesise
+			// the guide buffers RR needs from the depth we already share (see
+			// D3D12NeuralGBuffer). If that fails, fall through to plain DLSS SR
+			// rather than dropping the frame.
+			const auto* cameraFrame = Util::CameraFrame::GetSingleton();
+			const bool  guidesReady = cameraFrame->valid &&
+                D3D12NeuralGBuffer::GetSingleton()->Generate(
+					d3d12Device.get(),
+					commandList.get(),
+					depth->resource12.get(),
+					GetRenderWidth(), GetRenderHeight(),
+					displayWidth, displayHeight,
+					cameraFrame->viewMat,
+					cameraFrame->projMat);
+
+			if (guidesReady) {
+				auto* gbuffer = D3D12NeuralGBuffer::GetSingleton();
+				ok = sl->UpscaleD3D12RR(
+					colorInput->resource12.get(),
+					colorOutput->resource12.get(),
+					motionVectors->resource12.get(),
+					depth->resource12.get(),
+					gbuffer->GetNormalRoughness(),
+					gbuffer->GetAlbedo(),
+					gbuffer->GetSpecularAlbedo(),
+					commandList.get(),
+					frameToken,
+					renderSize, displaySize,
+					cameraFrame->viewMat,
+					qualityMode,
+					sharpness);
+			}
+
+			if (!ok) {
+				// One warning per transition, not one per frame.
+				if (!rayReconstructionFailed) {
+					rayReconstructionFailed = true;
+					logger::warn("[D3D12Upscaler] Ray Reconstruction unavailable this frame (guides={}); using DLSS super resolution", guidesReady);
+				}
+				ok = sl->UpscaleD3D12(
+					colorInput->resource12.get(),
+					colorOutput->resource12.get(),
+					nullptr,  // sharpened output
+					motionVectors->resource12.get(),
+					depth->resource12.get(),
+					nullptr,  // transparency mask
+					commandList.get(),
+					frameToken,
+					renderSize, displaySize,
+					DXGI_FORMAT_R16G16B16A16_FLOAT,
+					DXGI_FORMAT_R16G16_FLOAT,
+					DXGI_FORMAT_R32_FLOAT,
+					qualityMode,
+					sharpness,
+					dlssPreset,
+					&sharpened);
+			} else if (rayReconstructionFailed) {
+				rayReconstructionFailed = false;
+				logger::info("[D3D12Upscaler] Ray Reconstruction recovered");
+			}
+		} else if (method == 2) {
 			// NVIDIA DLSS via Streamline (Streamline manages resource states as
 			// COMMON internally, so no explicit barriers here).
 			ok = sl->UpscaleD3D12(
@@ -639,10 +704,13 @@ void D3D12Upscaler::Evaluate()
 		}
 
 		static uint32_t loggedMethod = 0xFFFFFFFF;
-		if (loggedMethod != method) {
+		static bool     loggedRR = false;
+		const bool      rrActive = method == 2 && rayReconstruction && !rayReconstructionFailed;
+		if (loggedMethod != method || loggedRR != rrActive) {
 			loggedMethod = method;
+			loggedRR = rrActive;
 			logger::info("[D3D12Upscaler] {} evaluate: ok={} sharpened={} render={}x{} display={}x{} scale={} sharpness={}",
-				method == 2 ? "DLSS" : "FSR",
+				method != 2 ? "FSR" : rrActive ? "DLSS-RR" : "DLSS",
 				ok, sharpened, GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight, renderScale, sharpness);
 		}
 	} catch (const std::exception& e) {
