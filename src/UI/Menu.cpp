@@ -224,6 +224,18 @@ namespace
 		ImGuiMCP::EndDisabled();
 		ImGuiMCP::EndDisabled();
 
+		// Without this the RTX 40 unlock is invisible: the multiplier stays at its
+		// default and nothing says how much higher it could be set.
+		{
+			const auto* sl = Streamline::GetSingleton();
+			const auto  maxGenerated = sl->GetMaxFramesToGenerate();
+			if (sl->featureDLSSG) {
+				ImGuiMCP::TextDisabled("Frame generation: up to %ux (%u generated frame%s)%s",
+					maxGenerated + 1u, maxGenerated, maxGenerated == 1 ? "" : "s",
+					sl->IsDynamicMFGSupported() ? ", dynamic supported" : ", dynamic unsupported");
+			}
+		}
+
 		static constexpr std::array reflexModes{ "Off", "On", "On + Boost" };
 		changed |= ComboSetting(
 			"NVIDIA Reflex",

@@ -240,6 +240,12 @@ public:
 	bool directDLSSNRReady = false;
 	[[nodiscard]] bool IsDLSSNRUsable() const { return featureDLSSNR || directDLSSNRReady; }
 
+	/// Highest generated-frame count the runtime will accept, after the RTX 40
+	/// unlock has had its say. 1 means plain 2x. Surfaced in the menu so the
+	/// player can see how far the multiplier can actually be raised.
+	[[nodiscard]] uint32_t GetMaxFramesToGenerate() const { return maxFramesToGenerate; }
+	[[nodiscard]] bool IsDynamicMFGSupported() const { return dynamicMFGSupported; }
+
 	/// NGX creates the DLSS-NR feature lazily, and creation must not be recorded
 	/// into the same submission as an evaluation. Ask first, and if this returns
 	/// true the caller must drain its queue, record PrepareDLSSNR on its own
