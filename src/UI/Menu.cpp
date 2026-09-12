@@ -253,10 +253,12 @@ namespace
 		ImGuiMCP::SeparatorText("Diagnostics");
 		static constexpr std::array osdModes{ "Disabled", "Compact", "Detailed" };
 		changed |= ComboSetting(
-			"On-Screen Display",
+			"On-Screen Display (FPS)",
 			settings.osdMode,
 			osdModes,
-			"Shows D3D12 swapchain and upscaler status while DLSS or FSR is active.");
+			"Overlay with the live FPS and frame time. With frame generation on it also "
+			"shows \"Generated FPS\" -- the actual presented rate after DLSS-G. Detailed "
+			"adds the render->display resolution, VRAM and Reflex latency.");
 		changed |= CheckboxSetting(
 			"Tagged Texture Debug View",
 			settings.taggedTextureDebug,

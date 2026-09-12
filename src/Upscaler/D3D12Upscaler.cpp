@@ -403,6 +403,11 @@ void D3D12Upscaler::UpdateFromSettings()
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
+	// Mirror the active method for the OSD / method-selection logic.
+	Upscaling::GetSingleton()->upscaleMethod =
+		method == 1 ? Upscaling::UpscaleMethod::kFSR :
+		method == 2 ? Upscaling::UpscaleMethod::kDLSS :
+					  Upscaling::UpscaleMethod::kDisabled;
 	// Method off, or a native-AA quality on the FSR path (FSR has no DLAA), means
 	// render at full res (no DRS). DLSS keeps DLAA at quality 0.
 	renderScale = (method == 0) ? 1.0f : RenderScaleForQuality(qualityMode);
@@ -448,6 +453,11 @@ void D3D12Upscaler::Evaluate()
 	if (!active) {
 		// Nothing to do; make sure the frame is presented at full resolution and
 		// DLSS-G is disabled (so the present doesn't tag stale resources).
+		{
+			auto* up = Upscaling::GetSingleton();
+			up->osdRenderSize = { static_cast<float>(displayWidth), static_cast<float>(displayHeight) };
+			up->osdNativeSize = up->osdRenderSize;
+		}
 		if (upscaling) {
 			ResetDynamicResolution();
 		}
@@ -523,6 +533,12 @@ void D3D12Upscaler::Evaluate()
 
 		const float2 renderSize{ static_cast<float>(GetRenderWidth()), static_cast<float>(GetRenderHeight()) };
 		const float2 displaySize{ static_cast<float>(displayWidth), static_cast<float>(displayHeight) };
+		// Feed the on-screen display: "Res: <render> -> <display>".
+		{
+			auto* up = Upscaling::GetSingleton();
+			up->osdRenderSize = renderSize;
+			up->osdNativeSize = displaySize;
+		}
 		bool ok = false;
 		bool sharpened = false;
 
