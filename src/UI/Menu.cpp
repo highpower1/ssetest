@@ -261,6 +261,15 @@ namespace
 				ImGuiMCP::TextDisabled("Ray Reconstruction unavailable (%s)", sl->dlssdStatus.c_str());
 			}
 
+			// DLSS 5 Neural Rendering (nvngx_dlssnr.dll) -- the feature the RenoDX
+			// community drives through ReShade. Reported only; Streamline 2.13 ships
+			// no public options struct for it, so there is nothing to switch on yet.
+			if (sl->featureDLSSNR) {
+				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: driver reports it available");
+			} else {
+				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering unavailable (%s)", sl->dlssnrStatus.c_str());
+			}
+
 			changed |= CheckboxSetting(
 				"External Neural Modules",
 				settings.neuralExternalModules,

@@ -201,8 +201,15 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 	// Loading it is harmless when the GPU/driver cannot run it: CheckFeatures then
 	// reports it unavailable and the menu toggle stays disabled.
 	sl::Feature d3d11FeaturesToLoad[] = { sl::kFeatureDLSS, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
-	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
-	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
+	//
+	// sl::kFeatureDLSS_NR is DLSS 5 Neural Rendering (nvngx_dlssnr.dll) -- the
+	// feature the RenoDX community drives through ReShade. Streamline 2.13 knows
+	// the feature id and plugin name but ships no sl_dlss_nr.h, so there is no
+	// public options struct yet; requesting it here is what turns the log's
+	// "Ignoring plugin 'sl.dlss_nr' since it was not requested by the host" into
+	// a real supported/unsupported answer from the driver.
+	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
+	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
 	if (a_renderAPI == sl::RenderAPI::eD3D12) {
 		if constexpr (Upscaling::kEnableDLSSG) {
 			pref.featuresToLoad = d3d12FeaturesToLoad;
@@ -229,7 +236,7 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 		pref.pathsToPlugins = pluginPaths;
 		pref.numPathsToPlugins = _countof(pluginPaths);
 
-		for (const auto& runtimeDependency : { L"sl.imgui.dll", L"sl.dlss.dll", L"nvngx_dlss.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.dlss_d.dll", L"nvngx_dlssd.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
+		for (const auto& runtimeDependency : { L"sl.imgui.dll", L"sl.dlss.dll", L"nvngx_dlss.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.dlss_d.dll", L"nvngx_dlssd.dll", L"sl.dlss_nr.dll", L"nvngx_dlssnr.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
 			const auto dependencyPath = std::filesystem::path(interposerDirectory) / runtimeDependency;
 			logger::info("[Streamline] Runtime dependency {} {}", dependencyPath.string(), std::filesystem::exists(dependencyPath) ? "found" : "missing");
 		}
@@ -400,10 +407,13 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 	}
 	if (UsesD3D12()) {
 		CheckFeature(sl::kFeatureDLSS_RR, a_adapter, featureDLSSD, "DLSS-RR", &dlssdStatus);
+		CheckFeature(sl::kFeatureDLSS_NR, a_adapter, featureDLSSNR, "DLSS-NR", &dlssnrStatus);
 	} else {
 		featureDLSSD = false;
+		featureDLSSNR = false;
 		dlssdStatus = "requires the D3D12 proxy path";
-		logger::info("[Streamline] DLSS-RR skipped: ray reconstruction is D3D12-only");
+		dlssnrStatus = dlssdStatus;
+		logger::info("[Streamline] DLSS-RR / DLSS-NR skipped: both are D3D12-only");
 	}
 	CheckFeature(sl::kFeatureReflex, a_adapter, featureReflex, "Reflex");
 	CheckFeature(sl::kFeatureNIS, a_adapter, featureNIS, "NIS");

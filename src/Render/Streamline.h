@@ -227,6 +227,8 @@ public:
 	bool featureDLSSG = false; ///< True if DLSS Frame Generation is available
 	bool featureDLSSD = false; ///< True if DLSS Ray Reconstruction (DLSS-D) is available
 	std::string dlssdStatus{ "not checked" }; ///< Human-readable DLSS-RR availability reason (for the menu)
+	bool featureDLSSNR = false; ///< True if DLSS 5 Neural Rendering (nvngx_dlssnr.dll) is available
+	std::string dlssnrStatus{ "not checked" }; ///< Human-readable DLSS-NR availability reason (for the menu)
 	bool featureNIS = false; ///< True if NVIDIA Image Scaling is available
 	bool featureReflex = false; ///< True if NVIDIA Reflex is available
 	bool featurePCL = false; ///< True if PCL markers are available
