@@ -55,6 +55,11 @@ target("SkyrimUpscaler")
         -- the minimal src/Hooks/DX11Hooks.cpp.
         "src/Render/DX11Hooks.cpp",
         "src/Neural/NeuralRendering.cpp",
+        -- DLSS 5 Neural Rendering ("uplift"). Ported from jarari/fo4test branch
+        -- test/dlss-nr: NVIDIA ships no public contract for this feature, so the
+        -- ABI is reconstructed and the snippet is driven directly through NGX.
+        "src/Neural/sl_dlss_nr.cpp",
+        "src/Neural/nvngx_dlss_nr_private.cpp",
         "src/Hooks/UpscalerHooks.cpp",
         "src/Settings/Settings.cpp",
         "src/Upscaler/Upscaling.cpp",
@@ -76,6 +81,9 @@ target("SkyrimUpscaler")
     -- so the copied render backend's `#include "Upscaling.h"` finds our port
     add_includedirs("src/Upscaler")
     add_includedirs("extern/Streamline/include")
+    -- NGX SDK headers: DLSS-NR has no Streamline plugin contract, so it is
+    -- driven straight through NGX (src/Neural/nvngx_dlss_nr_private.*).
+    add_includedirs("extern/Streamline/external/ngx-sdk/include")
     add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/api/include")
     add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/backend/dx12")
     add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/upscalers/include")
