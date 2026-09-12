@@ -7,6 +7,7 @@
 #include "FidelityFX.h"
 #include "OSD.h"
 #include "Streamline.h"
+#include "third_party/RTX40MFGUnlock/integration.h"
 #include "TaggedTextureDebug.h"
 #include "Upscaling.h"
 
@@ -316,6 +317,11 @@ HRESULT STDMETHODCALLTYPE DXGISwapChainProxy::SetHDRMetaData(DXGI_HDR_METADATA_T
 void DX12SwapChain::CreateD3D12Device(IDXGIAdapter* a_adapter, Streamline* a_streamline)
 {
 	DX::ThrowIfFailed(D3D12CreateDevice(a_adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(d3d12Device.put())));
+
+	// The Ada multi-frame-generation unlock needs the adapter identity before it
+	// can apply its midpoint correction, then another discovery pass.
+	RTX40MFGUnlock::ObserveD3D12Device(d3d12Device.get());
+	RTX40MFGUnlock::PatchLoadedModules();
 
 	if (a_streamline && a_streamline->slSetD3DDevice) {
 		if (SL_FAILED(result, a_streamline->slSetD3DDevice(d3d12Device.get()))) {

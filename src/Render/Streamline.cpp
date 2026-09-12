@@ -7,6 +7,7 @@
 #include "Game/Util.h"
 #include "Game/Renderer.h"
 #include "Render/DX12SwapChain.h"  // proxy D3D12 device, for the direct NGX DLSS-NR init
+#include "third_party/RTX40MFGUnlock/integration.h"
 #include "Upscaler/Upscaling.h"
 
 namespace
@@ -178,6 +179,8 @@ void Streamline::LoadInterposer()
 		if (GetModuleFileNameW(interposer, modulePath, static_cast<DWORD>(std::size(modulePath))) > 0) {
 			interposerDirectory = std::filesystem::path(modulePath).parent_path().wstring();
 		}
+		// The unlock watches later module loads to find the DLSS-G provider.
+		RTX40MFGUnlock::InstallLoaderDiscovery(interposer);
 		logger::info("[Streamline] Interposer loaded at address: {0:p}", static_cast<void*>(interposer));
 		logger::info("[Streamline] Runtime path: {}", std::filesystem::path(interposerDirectory).string());
 	}
@@ -290,6 +293,9 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 		initializedRenderAPI = a_renderAPI;
 		logger::info("[Streamline] Successfully initialized Streamline sdkVersion=0x{:016X} (DLSS-NR preview: {})",
 			sdkVersion, dlssNRRuntimePresent);
+		if (a_renderAPI == sl::RenderAPI::eD3D12) {
+			RTX40MFGUnlock::PatchLoadedModules();
+		}
 	}
 }
 
@@ -510,6 +516,10 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 
 void Streamline::PostDevice()
 {
+	if (UsesD3D12()) {
+		RTX40MFGUnlock::PatchLoadedModules();
+	}
+
 	if (featureDLSS) {
 		slGetFeatureFunction(sl::kFeatureDLSS, "slDLSSGetOptimalSettings", (void*&)slDLSSGetOptimalSettings);
 		slGetFeatureFunction(sl::kFeatureDLSS, "slDLSSGetState", (void*&)slDLSSGetState);
@@ -524,6 +534,9 @@ void Streamline::PostDevice()
 	if (featureDLSSG) {
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGGetState", (void*&)slDLSSGGetState);
 		slGetFeatureFunction(sl::kFeatureDLSS_G, "slDLSSGSetOptions", (void*&)slDLSSGSetOptions);
+		// Identifies which loaded provider actually serves DLSS-G when several
+		// wrappers are present in the process.
+		RTX40MFGUnlock::ObserveWrapper(reinterpret_cast<const void*>(slDLSSGSetOptions));
 	}
 
 	// The first feature query runs before the proxy owns a D3D12 device, so this
@@ -735,6 +748,37 @@ bool Streamline::UpdateDLSSG(bool a_enabled, uint a_mode, uint a_numFramesToGene
 	if (!featureDLSSG || !slDLSSGSetOptions) {
 		dlssgActive = false;
 		return false;
+	}
+
+	// Ada (RTX 40) is capped to 2x frame generation by the DLSS-G provider
+	// policy. RTX40MFG-Unlock patches that policy; until it reports ready this
+	// adapter must stay at 2x, and once it is ready the multiplier is whatever
+	// the unlock allows.
+	bool mfgUnlockReady = RTX40MFGUnlock::Ready();
+	if (UsesD3D12() && RTX40MFGUnlock::AdaAdapterVerified() && !mfgUnlockReady) {
+		// The patch needs the DLSS-G modules loaded, which happens after our
+		// first attempts; retry at most once a second rather than every frame.
+		static std::uint64_t lastUnlockRetryTick = 0;
+		const auto           now = GetTickCount64();
+		if (now - lastUnlockRetryTick >= 1000) {
+			lastUnlockRetryTick = now;
+			mfgUnlockReady = RTX40MFGUnlock::PatchLoadedModules();
+		}
+	}
+	const bool restrictAdaToTwoX = RTX40MFGUnlock::AdaAdapterVerified() && !mfgUnlockReady;
+	if (restrictAdaToTwoX) {
+		maxFramesToGenerate = 1;
+		dynamicMFGSupported = false;
+		dlssgStateKnown = false;  // re-query once the unlock lands
+	} else if (RTX40MFGUnlock::AdaAdapterVerified()) {
+		maxFramesToGenerate = std::min(maxFramesToGenerate, RTX40MFGUnlock::MaximumGeneratedFrames());
+	}
+
+	static bool loggedUnlockState = false;
+	if (!loggedUnlockState && RTX40MFGUnlock::AdaAdapterVerified() && mfgUnlockReady) {
+		loggedUnlockState = true;
+		logger::info("[Streamline] RTX 40 multi-frame generation unlocked; up to {} generated frames",
+			RTX40MFGUnlock::MaximumGeneratedFrames());
 	}
 
 	const bool hasSizes = a_renderSize.x > 0.0f && a_renderSize.y > 0.0f && a_displaySize.x > 0.0f && a_displaySize.y > 0.0f;

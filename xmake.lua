@@ -69,6 +69,13 @@ target("SkyrimUpscaler")
         "src/Render/Streamline.cpp",
         "src/Render/FidelityFX.cpp",
         "src/Render/D3D12UIComposite.cpp",
+        -- RTX40MFG-Unlock (MIT, github.com/dashdogy/RTX40MFG-Unlock), vendored
+        -- via jarari/fo4test: patches the DLSS-G provider policy that caps Ada
+        -- (RTX 40) at 2x frame generation.
+        "src/third_party/RTX40MFGUnlock/integration.cpp",
+        "src/third_party/RTX40MFGUnlock/loader_discovery.cpp",
+        "src/third_party/RTX40MFGUnlock/midpoint_fix.cpp",
+        "src/third_party/RTX40MFGUnlock/dlssg_provider_policy.cpp",
         -- Ray Reconstruction guide buffers (Skyrim has no G-buffer of its own)
         "src/Render/D3D12NeuralGBuffer.cpp",
         "src/Render/TaggedTextureDebug.cpp",
@@ -109,7 +116,8 @@ target("SkyrimUpscaler")
     -- add_links("amd_fidelityfx_loader_dx12", "delayimp")
     -- add_shflags("/DELAYLOAD:amd_fidelityfx_loader_dx12.dll", { force = true })
 
-    add_links("d3d11", "d3d12", "d3dcompiler", "dxgi", "gdi32")
+    -- bcrypt: RTX40MFG-Unlock SHA-256-verifies each module before patching it.
+    add_links("d3d11", "d3d12", "d3dcompiler", "dxgi", "gdi32", "bcrypt")
 
     -- Bundled Detours (IATHook / X64::DetourFunction / DetourClassVTable).
     add_linkdirs("include/detours/Release", { public = false })
