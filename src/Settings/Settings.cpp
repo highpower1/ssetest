@@ -55,6 +55,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "DLSSNRPreset", settings.dlssNRPreset);
 	GetUInt(ini, "DLSSNRStyle", settings.dlssNRStyle);
 	GetUInt(ini, "DLSSNRUseAutoMask", settings.dlssNRUseAutoMask);
+	GetUInt(ini, "DLSSNRDebugBypass", settings.dlssNRDebugBypass);
 	GetUInt(ini, "DLSSNRPassCount", settings.dlssNRPassCount);
 	GetUInt(ini, "DLSSNRAfterUpscale", settings.dlssNRAfterUpscale);
 	settings.dlssNRIntensity = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRIntensity", settings.dlssNRIntensity));
@@ -99,6 +100,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "DLSSNRPreset", static_cast<long>(a_settings.dlssNRPreset));
 	ini.SetLongValue(kSection, "DLSSNRStyle", static_cast<long>(a_settings.dlssNRStyle));
 	ini.SetLongValue(kSection, "DLSSNRUseAutoMask", static_cast<long>(a_settings.dlssNRUseAutoMask));
+	ini.SetLongValue(kSection, "DLSSNRDebugBypass", static_cast<long>(a_settings.dlssNRDebugBypass));
 	ini.SetLongValue(kSection, "DLSSNRPassCount", static_cast<long>(a_settings.dlssNRPassCount));
 	ini.SetLongValue(kSection, "DLSSNRAfterUpscale", static_cast<long>(a_settings.dlssNRAfterUpscale));
 	ini.SetDoubleValue(kSection, "DLSSNRIntensity", a_settings.dlssNRIntensity);

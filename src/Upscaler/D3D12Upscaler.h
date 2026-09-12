@@ -168,6 +168,8 @@ private:
 	bool     neuralRenderingSkipFrame = false;
 	bool     neuralAfterUpscale = true;        // uplift the resolved image, not the raw scene
 	bool     loggedNeuralOrderFallback = false;
+	bool     neuralDebugBypass = false;
+	bool     loggedNeuralDebugBypass = false;
 	// Set for the frames where the uplift ran after the upscaler: present and
 	// DLSS-G read this instead of colorOutput. Null on every other frame.
 	ID3D12Resource* neuralColorReady = nullptr;

@@ -56,7 +56,14 @@ public:
 		uint32_t dlssNREnabled = 0;
 		uint32_t dlssNRPreset = 0;
 		uint32_t dlssNRStyle = 0;
-		uint32_t dlssNRUseAutoMask = 0;
+		// On by default: we supply no explicit uplift control mask, so without the
+		// model choosing regions itself there is nothing marked to uplift and the
+		// output comes back identical to the input.
+		uint32_t dlssNRUseAutoMask = 1;
+		// Diagnostic. 1 = skip the uplift but still route its target to the
+		// screen, which shows the pre-upscale input and so proves whether the
+		// target reaches present at all.
+		uint32_t dlssNRDebugBypass = 0;
 		uint32_t dlssNRPassCount = 1;          // 1..3; more passes = stronger, slower
 		// 0 = before the upscaler, 1 = after it. Before means DLSS's temporal
 		// resolve runs over the uplift and largely averages the added detail back

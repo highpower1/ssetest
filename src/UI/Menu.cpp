@@ -304,7 +304,11 @@ namespace
 			changed |= CheckboxSetting(
 				"NR Auto Mask",
 				settings.dlssNRUseAutoMask,
-				"Lets the model pick which regions to uplift instead of treating the whole frame alike.");
+				"Lets the model pick which regions to uplift. Keep this on: no explicit uplift mask is "
+				"supplied, so with it off there may be nothing marked to uplift at all.");
+			changed |= SliderIntSetting(
+				"NR Style", settings.dlssNRStyle, 0, 4, "%d",
+				"Selects the model's look. Undocumented; sweep it if the uplift seems to do nothing.");
 			{
 				// 1..3 passes: each one re-runs the uplift over its own output.
 				static constexpr std::array nrPasses{ "1 pass", "2 passes", "3 passes" };
@@ -315,6 +319,13 @@ namespace
 					changed = true;
 				}
 			}
+			changed |= CheckboxSetting(
+				"NR Debug: bypass uplift",
+				settings.dlssNRDebugBypass,
+				"Diagnostic. Skips the uplift but still sends its target to the screen, filled with the "
+				"pre-upscale scene. If the picture changes, the target reaches the screen and the uplift "
+				"is returning its input unchanged. If nothing changes, the target never reaches the screen. "
+				"Turn this back off afterwards.");
 			ImGuiMCP::EndDisabled();
 
 			changed |= CheckboxSetting(

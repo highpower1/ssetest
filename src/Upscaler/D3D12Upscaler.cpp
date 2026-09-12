@@ -417,6 +417,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	// true once a backend (Streamline plugin or direct NGX) actually came up.
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
+	neuralDebugBypass = s.dlssNRDebugBypass != 0;
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
@@ -826,7 +827,21 @@ void D3D12Upscaler::Evaluate()
 
 			nrParameters.color = colorOutput->resource12.get();
 			nrParameters.output = neuralColor.get();
-			if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
+			if (neuralDebugBypass) {
+				// Diagnostic: don't run the uplift, just put something unmistakably
+				// different in its target and present that. colorInput shares the
+				// target's format, and at render resolution it fills only part of
+				// the texture -- so if the screen changes, the target reaches
+				// present and the uplift itself is returning its input unchanged.
+				// If the screen does NOT change, the target never reaches present.
+				commandList->CopyResource(neuralColor.get(), colorInput->resource12.get());
+				neuralColorReady = neuralColor.get();
+				neuralRenderingActive = true;
+				if (!loggedNeuralDebugBypass) {
+					loggedNeuralDebugBypass = true;
+					logger::warn("[DLSS-NR] DEBUG BYPASS is on: presenting the uplift target filled with the pre-upscale scene, not an uplifted image");
+				}
+			} else if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
 				// Present and DLSS-G read this instead of the upscaler's output.
 				neuralColorReady = neuralColor.get();
 				neuralRenderingActive = true;
