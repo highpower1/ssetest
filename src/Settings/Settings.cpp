@@ -51,6 +51,15 @@ void SettingsStore::Load()
 	settings.sharpness = static_cast<float>(ini.GetDoubleValue(kSection, "Sharpness", settings.sharpness));
 	GetUInt(ini, "NeuralRayReconstruction", settings.neuralRayReconstruction);
 	GetUInt(ini, "NeuralExternalModules", settings.neuralExternalModules);
+	GetUInt(ini, "DLSSNREnabled", settings.dlssNREnabled);
+	GetUInt(ini, "DLSSNRPreset", settings.dlssNRPreset);
+	GetUInt(ini, "DLSSNRStyle", settings.dlssNRStyle);
+	GetUInt(ini, "DLSSNRUseAutoMask", settings.dlssNRUseAutoMask);
+	GetUInt(ini, "DLSSNRPassCount", settings.dlssNRPassCount);
+	settings.dlssNRIntensity = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRIntensity", settings.dlssNRIntensity));
+	settings.dlssNRLocalToneStrength = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRLocalToneStrength", settings.dlssNRLocalToneStrength));
+	settings.dlssNRLocalStructureStrength = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRLocalStructureStrength", settings.dlssNRLocalStructureStrength));
+	settings.dlssNRSkinStructureStrength = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRSkinStructureStrength", settings.dlssNRSkinStructureStrength));
 
 	std::error_code ec;
 	lastWriteTime = std::filesystem::last_write_time(path, ec);
@@ -85,6 +94,15 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetDoubleValue(kSection, "Sharpness", a_settings.sharpness);
 	ini.SetLongValue(kSection, "NeuralRayReconstruction", static_cast<long>(a_settings.neuralRayReconstruction));
 	ini.SetLongValue(kSection, "NeuralExternalModules", static_cast<long>(a_settings.neuralExternalModules));
+	ini.SetLongValue(kSection, "DLSSNREnabled", static_cast<long>(a_settings.dlssNREnabled));
+	ini.SetLongValue(kSection, "DLSSNRPreset", static_cast<long>(a_settings.dlssNRPreset));
+	ini.SetLongValue(kSection, "DLSSNRStyle", static_cast<long>(a_settings.dlssNRStyle));
+	ini.SetLongValue(kSection, "DLSSNRUseAutoMask", static_cast<long>(a_settings.dlssNRUseAutoMask));
+	ini.SetLongValue(kSection, "DLSSNRPassCount", static_cast<long>(a_settings.dlssNRPassCount));
+	ini.SetDoubleValue(kSection, "DLSSNRIntensity", a_settings.dlssNRIntensity);
+	ini.SetDoubleValue(kSection, "DLSSNRLocalToneStrength", a_settings.dlssNRLocalToneStrength);
+	ini.SetDoubleValue(kSection, "DLSSNRLocalStructureStrength", a_settings.dlssNRLocalStructureStrength);
+	ini.SetDoubleValue(kSection, "DLSSNRSkinStructureStrength", a_settings.dlssNRSkinStructureStrength);
 
 	const SI_Error rc = ini.SaveFile(path.string().c_str());
 	if (rc < 0) {

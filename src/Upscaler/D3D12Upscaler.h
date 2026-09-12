@@ -139,6 +139,10 @@ private:
 	std::unique_ptr<D3D11D3D12SharedTexture> colorOutput;
 	std::unique_ptr<D3D11D3D12SharedTexture> motionVectors;
 	std::unique_ptr<D3D11D3D12SharedTexture> depth;
+	// DLSS-NR writes here rather than in place, and the upscaler then reads it
+	// instead of colorInput. D3D12-only: nothing on the D3D11 side needs it.
+	winrt::com_ptr<ID3D12Resource>           neuralColor;
+	bool EnsureNeuralColor();
 
 	uint32_t displayWidth = 0;
 	uint32_t displayHeight = 0;
@@ -153,6 +157,15 @@ private:
 	// the menu each frame, and only ever true when the feature actually came up.
 	bool     rayReconstruction = false;
 	bool     rayReconstructionFailed = false;  // latched so the fallback logs once, not every frame
+
+	// DLSS 5 Neural Rendering ("uplift"), run on the scene colour before the
+	// upscaler resolves it. Mirrored from the menu each frame.
+	bool     neuralRendering = false;
+	bool     neuralRenderingActive = false;    // it actually ran this frame
+	bool     neuralRenderingFailed = false;    // latched so the fallback logs once
+	// NGX creates the feature lazily; that creation must be submitted on its own,
+	// after the queue drains, and the uplift skipped for that one frame.
+	bool     neuralRenderingSkipFrame = false;
 	// True while a menu/logo/loading screen is up (set from UpdateFromSettings).
 	bool     blocked = true;
 	// sharedFence value after the most recent Evaluate's D3D12 DLSS signal.

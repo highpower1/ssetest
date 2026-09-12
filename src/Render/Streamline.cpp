@@ -313,6 +313,46 @@ void Streamline::PrepareDirectDLSSNR()
 	}
 }
 
+nvngx::dlss_nr::D3D12EvaluationParameters Streamline::MakeDLSSNRParameters()
+{
+	const auto& s = SettingsStore::GetSingleton()->settings;
+
+	nvngx::dlss_nr::D3D12EvaluationParameters parameters{};
+	// Skyrim never renders below native into the uplift, so NR always runs at the
+	// host's "native" quality slot regardless of the upscaler's own ratio.
+	parameters.options.performanceMode = nvngx::dlss_nr::kNativePerformanceMode;
+	parameters.options.preset = s.dlssNRPreset;
+	parameters.options.style = s.dlssNRStyle;
+	parameters.options.intensity = s.dlssNRIntensity;
+	parameters.options.localToneStrength = s.dlssNRLocalToneStrength;
+	parameters.options.localStructureStrength = s.dlssNRLocalStructureStrength;
+	parameters.options.skinStructureStrength = s.dlssNRSkinStructureStrength;
+	parameters.options.useAutoMask = s.dlssNRUseAutoMask != 0;
+	parameters.passCount = std::clamp(s.dlssNRPassCount, 1u, 3u);
+	return parameters;
+}
+
+bool Streamline::NeedsDLSSNRPreparation(const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters) const
+{
+	return directDLSSNRReady && directDLSSNR.NeedsFeaturePreparation(a_parameters);
+}
+
+bool Streamline::PrepareDLSSNR(ID3D12GraphicsCommandList* a_commandList, const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters)
+{
+	if (!directDLSSNRReady || !a_commandList) {
+		return false;
+	}
+	return directDLSSNR.PrepareFeature(a_commandList, a_parameters);
+}
+
+bool Streamline::EvaluateDLSSNR(ID3D12GraphicsCommandList* a_commandList, const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters)
+{
+	if (!directDLSSNRReady || !a_commandList) {
+		return false;
+	}
+	return directDLSSNR.Evaluate(a_commandList, a_parameters);
+}
+
 void Streamline::Shutdown()
 {
 	// The direct NGX backend owns its own load of the snippet and its own NGX

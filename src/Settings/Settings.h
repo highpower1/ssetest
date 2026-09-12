@@ -49,6 +49,19 @@ public:
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR
 		uint32_t neuralExternalModules = 1;    // load RenoDX-style DLLs from Neural/
+
+		// DLSS 5 Neural Rendering ("uplift"). Runs on the scene colour before the
+		// upscaler resolves it. Defaults mirror NVIDIA's neutral values, so a
+		// freshly enabled uplift is the model's own judgement and nothing else.
+		uint32_t dlssNREnabled = 0;
+		uint32_t dlssNRPreset = 0;
+		uint32_t dlssNRStyle = 0;
+		uint32_t dlssNRUseAutoMask = 0;
+		uint32_t dlssNRPassCount = 1;          // 1..3; more passes = stronger, slower
+		float    dlssNRIntensity = 1.0f;
+		float    dlssNRLocalToneStrength = 1.0f;
+		float    dlssNRLocalStructureStrength = 1.0f;
+		float    dlssNRSkinStructureStrength = 1.0f;
 	};
 
 	Settings settings;

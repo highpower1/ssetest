@@ -239,6 +239,17 @@ public:
 	/// is the path that actually carries the feature.
 	bool directDLSSNRReady = false;
 	[[nodiscard]] bool IsDLSSNRUsable() const { return featureDLSSNR || directDLSSNRReady; }
+
+	/// NGX creates the DLSS-NR feature lazily, and creation must not be recorded
+	/// into the same submission as an evaluation. Ask first, and if this returns
+	/// true the caller must drain its queue, record PrepareDLSSNR on its own
+	/// submission, and skip the uplift for that frame.
+	[[nodiscard]] bool NeedsDLSSNRPreparation(const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters) const;
+	bool PrepareDLSSNR(ID3D12GraphicsCommandList* a_commandList, const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters);
+	bool EvaluateDLSSNR(ID3D12GraphicsCommandList* a_commandList, const nvngx::dlss_nr::D3D12EvaluationParameters& a_parameters);
+	/// Build the parameter block from the live menu settings. Resources and sizes
+	/// are the caller's to fill in.
+	[[nodiscard]] static nvngx::dlss_nr::D3D12EvaluationParameters MakeDLSSNRParameters();
 	bool featureNIS = false; ///< True if NVIDIA Image Scaling is available
 	bool featureReflex = false; ///< True if NVIDIA Reflex is available
 	bool featurePCL = false; ///< True if PCL markers are available

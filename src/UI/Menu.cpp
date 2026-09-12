@@ -264,13 +264,52 @@ namespace
 			// DLSS 5 Neural Rendering (nvngx_dlssnr.dll) -- the feature the RenoDX
 			// community drives through ReShade. Reported only; Streamline 2.13 ships
 			// no public options struct for it, so there is nothing to switch on yet.
+			// DLSS 5 Neural Rendering ("uplift"): colour in, enhanced colour out.
+			const bool nrUsable = sl->IsDLSSNRUsable();
+			ImGuiMCP::BeginDisabled(!nrUsable);
+			changed |= CheckboxSetting(
+				"DLSS 5 Neural Rendering",
+				settings.dlssNREnabled,
+				"Runs NVIDIA's neural uplift on the scene before upscaling: more plausible "
+				"detail in faces, skin, hair and cloth. Requires the DLSS method.");
+			ImGuiMCP::EndDisabled();
+
 			if (sl->featureDLSSNR) {
-				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: Streamline plugin");
+				ImGuiMCP::TextDisabled("Neural Rendering: Streamline plugin");
 			} else if (sl->directDLSSNRReady) {
-				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering: direct NGX path ready");
+				ImGuiMCP::TextDisabled("Neural Rendering: direct NGX path");
 			} else {
-				ImGuiMCP::TextDisabled("DLSS 5 Neural Rendering unavailable (%s)", sl->dlssnrStatus.c_str());
+				ImGuiMCP::TextDisabled("Neural Rendering unavailable (%s)", sl->dlssnrStatus.c_str());
 			}
+
+			ImGuiMCP::BeginDisabled(!nrUsable || settings.dlssNREnabled == 0);
+			changed |= SliderFloatSetting(
+				"NR Intensity", settings.dlssNRIntensity, 0.0f, 1.0f, "%.2f",
+				"Overall strength of the uplift. 1.0 is NVIDIA's neutral value.");
+			changed |= SliderFloatSetting(
+				"NR Local Tone", settings.dlssNRLocalToneStrength, 0.0f, 1.0f, "%.2f",
+				"How far the model may push local contrast and shading.");
+			changed |= SliderFloatSetting(
+				"NR Local Structure", settings.dlssNRLocalStructureStrength, 0.0f, 1.0f, "%.2f",
+				"How much fine surface detail the model may add.");
+			changed |= SliderFloatSetting(
+				"NR Skin Structure", settings.dlssNRSkinStructureStrength, 0.0f, 1.0f, "%.2f",
+				"Detail strength applied specifically to skin. Lower it if faces look harsh.");
+			changed |= CheckboxSetting(
+				"NR Auto Mask",
+				settings.dlssNRUseAutoMask,
+				"Lets the model pick which regions to uplift instead of treating the whole frame alike.");
+			{
+				// 1..3 passes: each one re-runs the uplift over its own output.
+				static constexpr std::array nrPasses{ "1 pass", "2 passes", "3 passes" };
+				uint32_t passIndex = std::clamp(settings.dlssNRPassCount, 1u, 3u) - 1u;
+				if (ComboSetting("NR Passes", passIndex, nrPasses,
+						"More passes push the effect further at a proportional cost.")) {
+					settings.dlssNRPassCount = passIndex + 1u;
+					changed = true;
+				}
+			}
+			ImGuiMCP::EndDisabled();
 
 			changed |= CheckboxSetting(
 				"External Neural Modules",

@@ -404,6 +404,9 @@ void D3D12Upscaler::UpdateFromSettings()
 	// Ray Reconstruction replaces DLSS super resolution with the DLSS-D denoiser.
 	// It is a DLSS-path-only option and needs the feature to have come up.
 	rayReconstruction = s.neuralRayReconstruction != 0 && Streamline::GetSingleton()->featureDLSSD;
+	// DLSS 5 Neural Rendering. Like RR this is a DLSS-path option, and only ever
+	// true once a backend (Streamline plugin or direct NGX) actually came up.
+	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
@@ -415,6 +418,42 @@ void D3D12Upscaler::UpdateFromSettings()
 	// Method off, or a native-AA quality on the FSR path (FSR has no DLAA), means
 	// render at full res (no DRS). DLSS keeps DLAA at quality 0.
 	renderScale = (method == 0) ? 1.0f : RenderScaleForQuality(qualityMode);
+}
+
+bool D3D12Upscaler::EnsureNeuralColor()
+{
+	if (neuralColor) {
+		return true;
+	}
+	if (!d3d12Device || displayWidth == 0 || displayHeight == 0) {
+		return false;
+	}
+
+	D3D12_HEAP_PROPERTIES heap{};
+	heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	desc.Width = displayWidth;
+	desc.Height = displayHeight;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	// Matches the shared scene colour, so the uplift is a drop-in for colorInput.
+	desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	desc.SampleDesc.Count = 1;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+	const auto hr = d3d12Device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+		D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(neuralColor.put()));
+	if (FAILED(hr)) {
+		logger::warn("[DLSS-NR] Could not create the uplift target {}x{}: 0x{:08X}",
+			displayWidth, displayHeight, static_cast<uint32_t>(hr));
+		neuralColor = nullptr;
+		return false;
+	}
+	logger::info("[DLSS-NR] Uplift target created {}x{}", displayWidth, displayHeight);
+	return true;
 }
 
 void D3D12Upscaler::Evaluate()
@@ -546,6 +585,68 @@ void D3D12Upscaler::Evaluate()
 		bool ok = false;
 		bool sharpened = false;
 
+		// ---- DLSS 5 Neural Rendering ("uplift"), ahead of the upscaler --------
+		// Runs on the render-resolution scene colour so the upscaler resolves the
+		// uplifted image. On success the upscaler's input swaps to neuralColor;
+		// on any failure it stays colorInput and the frame is unaffected.
+		ID3D12Resource* upscalerInput = colorInput->resource12.get();
+		neuralRenderingActive = false;
+		if (method == 2 && neuralRendering && EnsureNeuralColor()) {
+			auto parameters = Streamline::MakeDLSSNRParameters();
+			parameters.color = colorInput->resource12.get();
+			parameters.output = neuralColor.get();
+			parameters.motionVectors = motionVectors->resource12.get();
+			parameters.depth = depth->resource12.get();
+			parameters.inputWidth = parameters.outputWidth = parameters.guideWidth = GetRenderWidth();
+			parameters.inputHeight = parameters.outputHeight = parameters.guideHeight = GetRenderHeight();
+			// Skyrim's motion vectors are normalised screen space (Streamline runs
+			// them at mvecScale 1,1); NGX wants pixels, so scale by the render size.
+			parameters.motionVectorScaleX = static_cast<float>(GetRenderWidth());
+			parameters.motionVectorScaleY = static_cast<float>(GetRenderHeight());
+			parameters.depthInverted = false;
+			parameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
+			parameters.reset = neuralRenderingSkipFrame;
+
+			if (sl->NeedsDLSSNRPreparation(parameters)) {
+				// NGX feature creation must not share a submission with an
+				// evaluation, and the queue has to be idle first. We already
+				// waited on the work fence above, so the queue is drained here:
+				// record creation alone, submit it, wait, and start a fresh list.
+				const bool prepared = sl->PrepareDLSSNR(commandList.get(), parameters);
+				DX::ThrowIfFailed(commandList->Close());
+				ID3D12CommandList* prepareLists[] = { commandList.get() };
+				commandQueue->ExecuteCommandLists(1, prepareLists);
+				DX::ThrowIfFailed(commandQueue->Signal(fence.get(), ++fenceValue));
+				if (fence->GetCompletedValue() < fenceValue) {
+					DX::ThrowIfFailed(fence->SetEventOnCompletion(fenceValue, fenceEvent.get()));
+					if (WaitForSingleObjectEx(fenceEvent.get(), 5000, FALSE) != WAIT_OBJECT_0) {
+						logger::critical("[DLSS-NR] Feature creation did not complete; disabling the upscaler");
+						ready = false;
+						return;
+					}
+				}
+				DX::ThrowIfFailed(commandAllocator->Reset());
+				DX::ThrowIfFailed(commandList->Reset(commandAllocator.get(), nullptr));
+				// Creation changes the working set: let one plain frame through
+				// before evaluating the new feature.
+				neuralRenderingSkipFrame = true;
+				logger::info("[DLSS-NR] Feature creation submitted prepared={} input={}x{} passes={}",
+					prepared, parameters.inputWidth, parameters.inputHeight, parameters.passCount);
+			} else if (neuralRenderingSkipFrame) {
+				neuralRenderingSkipFrame = false;
+			} else if (sl->EvaluateDLSSNR(commandList.get(), parameters)) {
+				upscalerInput = neuralColor.get();
+				neuralRenderingActive = true;
+				if (neuralRenderingFailed) {
+					neuralRenderingFailed = false;
+					logger::info("[DLSS-NR] Uplift recovered");
+				}
+			} else if (!neuralRenderingFailed) {
+				neuralRenderingFailed = true;
+				logger::warn("[DLSS-NR] Uplift evaluation failed; the frame falls through to the upscaler unchanged");
+			}
+		}
+
 		if (method == 2 && rayReconstruction) {
 			// NVIDIA DLSS Ray Reconstruction. Skyrim has no G-buffer, so synthesise
 			// the guide buffers RR needs from the depth we already share (see
@@ -565,7 +666,7 @@ void D3D12Upscaler::Evaluate()
 			if (guidesReady) {
 				auto* gbuffer = D3D12NeuralGBuffer::GetSingleton();
 				ok = sl->UpscaleD3D12RR(
-					colorInput->resource12.get(),
+					upscalerInput,
 					colorOutput->resource12.get(),
 					motionVectors->resource12.get(),
 					depth->resource12.get(),
@@ -587,7 +688,7 @@ void D3D12Upscaler::Evaluate()
 					logger::warn("[D3D12Upscaler] Ray Reconstruction unavailable this frame (guides={}); using DLSS super resolution", guidesReady);
 				}
 				ok = sl->UpscaleD3D12(
-					colorInput->resource12.get(),
+					upscalerInput,
 					colorOutput->resource12.get(),
 					nullptr,  // sharpened output
 					motionVectors->resource12.get(),
@@ -611,7 +712,7 @@ void D3D12Upscaler::Evaluate()
 			// NVIDIA DLSS via Streamline (Streamline manages resource states as
 			// COMMON internally, so no explicit barriers here).
 			ok = sl->UpscaleD3D12(
-				colorInput->resource12.get(),
+				upscalerInput,
 				colorOutput->resource12.get(),
 				nullptr,  // sharpened output
 				motionVectors->resource12.get(),
