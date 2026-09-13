@@ -6,6 +6,9 @@
 
 #include <atomic>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace
@@ -61,6 +64,11 @@ namespace
 
 	// Read straight from the ini: the device exists long before SettingsStore is
 	// loaded, so the usual settings path is not available yet.
+	//
+	// Parsed by hand rather than with GetPrivateProfileInt, which returned the
+	// default here: the file is UTF-8 with a byte-order mark, and the profile API
+	// then fails to match the leading [General] section. SimpleIni strips the
+	// mark, which is why every other setting loaded fine.
 	bool DebugLayerRequested()
 	{
 		wchar_t moduleName[MAX_PATH]{};
@@ -71,9 +79,31 @@ namespace
 		if (!self || GetModuleFileNameW(self, moduleName, MAX_PATH) == 0) {
 			return false;
 		}
-		const auto ini = std::filesystem::path(moduleName).parent_path() /
-		                 L"SkyrimUpscaler" / L"SkyrimUpscaler.ini";
-		return GetPrivateProfileIntW(L"General", L"D3D12DebugLayer", 0, ini.c_str()) != 0;
+		const auto path = std::filesystem::path(moduleName).parent_path() /
+		                  L"SkyrimUpscaler" / L"SkyrimUpscaler.ini";
+
+		std::string text;
+		{
+			std::ifstream file(path, std::ios::binary);
+			if (!file) {
+				logger::info("[D3D12] Debug layer not requested: no ini at {}", path.string());
+				return false;
+			}
+			text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+		}
+
+		bool       requested = false;
+		const auto key = text.find("D3D12DebugLayer");
+		if (key != std::string::npos) {
+			const auto equals = text.find('=', key);
+			const auto lineEnd = text.find('\n', key);
+			if (equals != std::string::npos && (lineEnd == std::string::npos || equals < lineEnd)) {
+				const auto value = text.find_first_not_of(" \t", equals + 1);
+				requested = value != std::string::npos && text[value] != '0';
+			}
+		}
+		logger::info("[D3D12] Debug layer {} in {}", requested ? "REQUESTED" : "not requested", path.string());
+		return requested;
 	}
 }
 
