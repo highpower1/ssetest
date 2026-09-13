@@ -236,6 +236,11 @@ namespace FrameTimeline
 			a_callback ? "registered" : "cleared", resolved, kPostChainStart.size());
 	}
 
+	bool SceneCompleteFiredThisFrame()
+	{
+		return g_sceneCompleteFiredThisFrame;
+	}
+
 	void OnFrameBoundary()
 	{
 		g_sceneCompleteFiredThisFrame = false;

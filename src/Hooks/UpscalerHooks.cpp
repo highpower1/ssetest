@@ -189,8 +189,27 @@ namespace
 			NeuralRendering::GetSingleton()->OnFrame();
 			// Approach 1 eval: process the main color through the D3D12 interop
 			// (increment 2a = identity round-trip to validate sync). Skipped when
-			// the scene-complete hook owns the evaluation instead.
-			if (SettingsStore::GetSingleton()->settings.upscalerHookPoint == 0) {
+			// the scene-complete hook owns the evaluation instead -- but only while
+			// that hook is actually firing. It depends on a render-target bind we
+			// do not control, so a setup where none of the post-chain targets is
+			// used would otherwise leave nothing running the upscaler at all.
+			const auto hookPoint = SettingsStore::GetSingleton()->settings.upscalerHookPoint;
+			static uint32_t missedSceneComplete = 0;
+			bool            evaluateHere = hookPoint == 0;
+			if (hookPoint == 1) {
+				if (FrameTimeline::SceneCompleteFiredThisFrame()) {
+					missedSceneComplete = 0;
+				} else if (++missedSceneComplete >= 60) {
+					evaluateHere = true;
+					if (missedSceneComplete == 60) {
+						logger::warn("[UpscalerHooks] The scene-complete hook has not fired for 60 frames; "
+									 "falling back to the pre-UI hook. The upscaler will run, but after the "
+									 "game's post-processing and ENB, so its output reaches the screen "
+									 "ungraded.");
+					}
+				}
+			}
+			if (evaluateHere) {
 				D3D12Upscaler::GetSingleton()->Evaluate();
 			}
 			func(a_renderer, a_unk);

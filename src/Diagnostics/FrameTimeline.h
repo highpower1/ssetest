@@ -38,4 +38,10 @@ namespace FrameTimeline
 	// render hooks; the callback runs on the render thread, inside
 	// OMSetRenderTargets and before the original call.
 	void SetSceneCompleteCallback(void (*a_callback)());
+
+	// Whether the scene-complete callback has run in the frame in progress. The
+	// pre-UI hook uses this to notice that the trigger never fires -- a render
+	// setup where none of the post-chain targets is bound would otherwise leave
+	// the upscaler silently doing nothing at all.
+	[[nodiscard]] bool SceneCompleteFiredThisFrame();
 }

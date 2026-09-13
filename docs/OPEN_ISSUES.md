@@ -128,6 +128,56 @@ Still true: ENB's tonemapping and grading run against the cleared colour target
 and never reach the scene. The mask fixes what was being drawn over the scene,
 not what is missing from it.
 
+## Resolved: ENB graded the game's scene instead of ours
+
+Fixed 2026-09-13. This was the last of the ENB problems and the only one
+whose fix was structural rather than a workaround.
+
+The scene we upscaled reached the screen without ENB's tonemapping or colour,
+and writing our result into `kMAIN` changed nothing. A magenta sweep over the
+render targets found ENB's output in `kFRAMEBUFFER`, and magenta written there
+at the pre-UI hook survived to the screen -- so nothing wrote the scene after
+our hook, and ENB was upstream of us, not downstream.
+
+One frame of `OMSetRenderTargets`, each view resolved to its `RE::RENDER_TARGET`
+name, placed everything exactly:
+
+```
+182  kMAIN                        the scene is finished
+185  kIBLENSFLARES_LIGHTS_FILTER  the first pass that reads it
+189  kHDR_DOWNSAMPLE0 ...         bloom, exposure, lens flares
+209  kMAIN                        the post chain writes back
+217  kIMAGESPACE_TEMP_COPY
+223  kFRAMEBUFFER                 the finished frame
+225  >>> our pre-UI hook <<<      everything was already over
+```
+
+The upscaler now runs at bind 185 instead of 225, triggered from the
+`OMSetRenderTargets` interception at the first post-chain bind of the frame,
+while the finished scene is still in `kMAIN` and nothing has consumed it. ENB
+then grades our image. `UpscalerHookPoint = 1` is the default; `0` restores the
+old position.
+
+Two things had to come with it. The callback issues D3D11 work on the very
+context whose binds trigger it, so it is guarded against re-entry and fires once
+per frame. And the engine's TAA, which was turned off only "while actively
+upscaling" -- meaning never at Native AA -- now goes off at this hook point
+regardless, because here the engine accumulates *after* DLAA and the uplift
+rather than before. That second temporal pass was visible on exactly what moves
+most: the user reported particles first, then the sky.
+
+Verified: 10800 frames, uplift 600/600 across fourteen consecutive intervals, no
+errors, `Engine TAA disabled for upscaling (renderScale=1)` in the log, and the
+image confirmed by the user as correct with ENB's grading present.
+
+Because the trigger depends on a bind we do not control, the pre-UI hook now
+watches for the callback failing to fire and takes over after 60 frames with a
+warning, rather than leaving nothing running the upscaler.
+
+The present override, the UI composite, the difference mask and the grade
+transfer are all unnecessary at this hook point. They remain for the no-ENB case
+and as the path frame generation needs.
+
 ## Open: frame generation is unavailable with the Steam overlay
 
 Not a bug to fix here -- the overlay faults on DLSS-G's own present thread. It

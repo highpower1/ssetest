@@ -78,7 +78,7 @@ public:
 		// 1 = the scene-complete hook, at the first post-processing bind of the
 		// frame, so ENB grades the upscaled scene instead of the game's. Plan A;
 		// forces the copy-back output path and disables frame generation.
-		uint32_t upscalerHookPoint = 0;
+		uint32_t upscalerHookPoint = 1;
 		uint32_t enbGradeTransfer = 0;
 		float    enbGradeStrength = 1.0f;
 		float    enbGradeRadius = 8.0f;
