@@ -94,8 +94,6 @@ could not enumerate, it is credited as such rather than guessed at.
   inline approach was not used: it predates ENB support and modern DLSS is
   D3D12-only. Every offset taken from it was verified against the live runtime
   before use.
-- **ENBSeries** by **Boris Vorontsov** — the present path is built to coexist
-  with it.
 
 ## Corrections
 
