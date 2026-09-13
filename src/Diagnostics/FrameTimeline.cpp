@@ -17,7 +17,12 @@ namespace
 	constexpr uint32_t kMaxEntries = 600;
 
 	std::atomic<bool>     g_armed{ false };
+	std::atomic<bool>     g_pending{ false };
 	std::atomic<uint32_t> g_entries{ 0 };
+	// Counted always, so "how many binds does this context actually see" is
+	// answerable without arming anything.
+	std::atomic<uint32_t> g_bindsThisFrame{ 0 };
+	std::atomic<uint32_t> g_lastFrameBinds{ 0 };
 	bool                  g_installed = false;
 
 	// RTV pointer -> render target name, built once. The engine keeps its views
@@ -60,6 +65,7 @@ namespace
 			ID3D11RenderTargetView* const* ppRenderTargetViews,
 			ID3D11DepthStencilView*        pDepthStencilView)
 		{
+			g_bindsThisFrame.fetch_add(1, std::memory_order_relaxed);
 			if (g_armed.load(std::memory_order_relaxed)) {
 				const auto n = g_entries.fetch_add(1, std::memory_order_relaxed);
 				if (n < kMaxEntries) {
@@ -150,9 +156,14 @@ namespace FrameTimeline
 	void Arm()
 	{
 		BuildNames();
-		g_entries.store(0, std::memory_order_relaxed);
-		g_armed.store(true, std::memory_order_relaxed);
-		logger::info("[FrameTimeline] ===== capture armed for one frame =====");
+		// Arming immediately captured only whatever was left of the frame in
+		// progress, which was two binds and the closing marker -- the world had
+		// already been drawn. Start at the next frame boundary instead, so the
+		// window is one whole frame.
+		g_pending.store(true, std::memory_order_relaxed);
+		logger::info("[FrameTimeline] ===== capture will start at the next frame boundary "
+					 "(last frame saw {} binds) =====",
+			g_lastFrameBinds.load(std::memory_order_relaxed));
 	}
 
 	void Mark(const char* a_label)
@@ -166,9 +177,18 @@ namespace FrameTimeline
 
 	void OnFrameBoundary()
 	{
+		g_lastFrameBinds.store(g_bindsThisFrame.exchange(0, std::memory_order_relaxed),
+			std::memory_order_relaxed);
+
 		if (g_armed.exchange(false, std::memory_order_relaxed)) {
 			logger::info("[FrameTimeline] ===== capture ended ({} entries) =====",
 				g_entries.load(std::memory_order_relaxed));
+			return;
+		}
+		if (g_pending.exchange(false, std::memory_order_relaxed)) {
+			g_entries.store(0, std::memory_order_relaxed);
+			g_armed.store(true, std::memory_order_relaxed);
+			logger::info("[FrameTimeline] ===== capture started, one full frame =====");
 		}
 	}
 }
