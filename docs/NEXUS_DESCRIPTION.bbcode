@@ -1,3 +1,13 @@
+[center][size=4][color=#888888][b]DISCLAIMER[/b][/color][/size]
+[color=#888888][i]This is AI slop, written by Claude Code and Codex.[/i][/color]
+
+[color=#888888][size=2]Every line of it. Saying so up front so nobody has to discover it and feel clever.
+The source is public, the licence is GPL-3.0, and it either works on your machine or it does not --
+all three of those are checkable and none of them change based on who typed it.
+If that is disqualifying for you, close the tab; no hard feelings and no argument needed.[/size][/color][/center]
+
+[line]
+
 [center][size=6][b]Skyrim Upscaler -- DLSS 4 / DLSS 5 Neural Rendering / FSR[/b][/size]
 [size=3]DLSS, DLAA, Frame Generation, Ray Reconstruction and NVIDIA's Neural Rendering, with ENB.[/size][/center]
 
@@ -34,14 +44,15 @@ Everything is configured in game. No ini editing required.
 [*][url=https://skse.silverlock.org/]SKSE64[/url]
 [*][url=https://www.nexusmods.com/skyrimspecialedition/mods/120352]SKSE Menu Framework[/url]
 [*]An NVIDIA RTX card for the DLSS features. FSR runs on anything.
-[*]NVIDIA's Streamline runtime DLLs -- [b]you have to supply these yourself[/b], see below
 [*][b]Community Shaders must not be installed[/b]
 [/list]
 
 [b]FSR[/b] -- any reasonably modern GPU
 [b]DLSS / DLAA / Ray Reconstruction[/b] -- NVIDIA RTX
 [b]Frame Generation[/b] -- NVIDIA RTX 40 or 50
-[b]Neural Rendering[/b] -- NVIDIA RTX [b]and[/b] a DLL you must find yourself
+[b]Neural Rendering[/b] -- NVIDIA RTX
+
+[b]Every runtime is included in the download.[/b] Nothing else to find, nothing else to place.
 
 [line]
 
@@ -49,22 +60,20 @@ Everything is configured in game. No ini editing required.
 
 [list=1]
 [*]Install with your mod manager, or drop the [font=Courier New]SKSE[/font] folder into [font=Courier New]Data[/font].
-[*]Put NVIDIA's Streamline DLLs in [font=Courier New]Data/SKSE/Plugins/SkyrimUpscaler/Streamline/[/font]. There is a text file already in that folder listing exactly which ones.
 [*]Launch, press [b]F1[/b] to open the Mod Control Panel, and pick [b]SkyrimUpscaler[/b].
 [/list]
 
-[b]Why do I have to download extra DLLs?[/b]
-NVIDIA's DLSS runtime and AMD's FSR runtime are distributed by NVIDIA and AMD under their own licences and cannot be bundled here. Every file is reported as [font=Courier New]found[/font] or [font=Courier New]missing[/font] in the log at startup, so a missing one is easy to spot. A feature whose DLLs are absent simply stays unavailable in the menu -- nothing breaks.
+That is all of it. The NVIDIA and AMD runtimes are in the archive and go where they need to go on their own.
+
+Every one of them is reported as [font=Courier New]found[/font] or [font=Courier New]missing[/font] in the log at startup, so if something did not survive your mod manager it says so plainly. A feature whose DLL is missing simply stays unavailable in the menu -- nothing breaks.
 
 [line]
 
-[size=5][b]Neural Rendering will not turn on. Why?[/b][/size]
+[size=5][b]About Neural Rendering[/b][/size]
 
-[b]This is expected on most cards and it is not a bug in this mod.[/b]
+The [font=Courier New]nvngx_dlssnr.dll[/font] NVIDIA ships only contains code for RTX 50-series cards. On a 20, 30 or 40 series card it loads and then refuses to run -- which is why this feature does not simply work everywhere.
 
-The [font=Courier New]nvngx_dlssnr.dll[/font] NVIDIA ships only contains code for RTX 50-series GPUs. On a 20, 30 or 40 series card it loads and then refuses to run. A community-patched build exists, and the [url=https://discord.com/invite/renodx][b]RenoDX Discord[/b][/url] is where that work happens and where the file is shared.
-
-[b]Neural Rendering in this mod would not exist without them.[/b] Please go and say thank you, not only to download.
+The build in this download is the community-patched one, and it runs on Ada and earlier. That work is not mine. It comes from the [url=https://discord.com/invite/renodx][b]RenoDX[/b][/url] community, and [b]Neural Rendering in this mod would not exist without them.[/b] If this is the feature you came for, go and say thank you over there.
 
 [line]
 
@@ -121,7 +130,7 @@ Quick checks before reporting:
 [list=1]
 [*]Turn Frame Generation off and try again. It is the single most likely cause of a freeze.
 [*]Confirm Community Shaders is not installed.
-[*]Confirm the Streamline DLLs are in the right folder.
+[*]Check the log for a runtime DLL reported as [font=Courier New]missing[/font] -- if one is, the install did not land intact.
 [/list]
 
 [b]The screen went strange after I pressed a key?[/b] Press [b]F10[/b] a few more times. F10 cycles diagnostic views used during development, and some of them hide the entire interface. Keep pressing until it looks normal. Set [font=Courier New]UICompositeDebugKey = 0[/font] in the ini to disable the key entirely.
@@ -153,4 +162,4 @@ Full list with licences in [font=Courier New]Docs/CREDITS.md[/font].
 
 GPL-3.0. Source: [url=https://github.com/nashglyx/ssetest]github.com/nashglyx/ssetest[/url]
 
-[size=2][i]Disclosure: this plugin was written with heavy use of AI coding tools (Claude Code and Codex). Read the source before you trust it with your GPU.[/i][/size]
+[size=2][i]See the disclaimer at the top. Read the source before you trust it with your GPU -- that advice is not specific to AI.[/i][/size]

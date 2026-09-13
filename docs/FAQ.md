@@ -61,28 +61,32 @@ Work down this list:
 1. **Is anything turned on?** Frame generation and Neural Rendering both default
    to **off**. Upscaling defaults to Native AA, which improves anti-aliasing but
    will not change your frame rate much.
-2. **Did you install the runtime DLLs?** This mod does not include NVIDIA's or
-   AMD's files. Without them there is nothing to run. See
-   [the README's Installing section](../README.md#installing).
+2. **Did the install land intact?** Check the log for any runtime DLL reported
+   as `missing`. A feature whose DLL is absent stays unavailable in the menu
+   rather than failing loudly.
 3. **Is Community Shaders installed?** See the top of this page.
 
-## Do I have to download extra files? Why?
+## Do I have to download extra files?
 
-Yes, and it is not optional. NVIDIA's DLSS runtime and AMD's FSR runtime are
-distributed by NVIDIA and AMD under their own licences, so they cannot be
-bundled here. You put them in
-`Data/SKSE/Plugins/SkyrimUpscaler/Streamline/` yourself.
+**Not if you installed the release package** — every NVIDIA and AMD runtime is
+in it and lands where it needs to be.
 
-## Neural Rendering will not turn on
+If you built the plugin from source instead, you supply them yourself: NVIDIA's
+Streamline DLLs go in `Data/SKSE/Plugins/SkyrimUpscaler/Streamline/` and AMD's
+FidelityFX DLLs go next to `SkyrimUpscaler.dll`. Every file is reported as
+`found` or `missing` in the log at startup.
 
-This is expected on most cards, and it is not a bug in this mod.
+## About Neural Rendering
 
 The file NVIDIA ships (`nvngx_dlssnr.dll`) only contains code for RTX 50-series
-GPUs. On a 20, 30 or 40 series card it loads and then refuses to run. A patched
-version exists, made by the community, and the
-**[RenoDX Discord](https://discord.com/invite/renodx)** is where that work
-happens and where the file is shared. This mod's Neural Rendering would not work
-at all without them.
+GPUs. On a 20, 30 or 40 series card it loads and then refuses to run — which is
+why this feature does not simply work everywhere.
+
+The build in the release package is the community-patched one and runs on Ada
+and earlier. That work is not this project's. It comes from the
+**[RenoDX](https://discord.com/invite/renodx)** community, and this mod's Neural
+Rendering would not exist without them. If this is the feature you came for, go
+and say thank you over there.
 
 ## Should I turn frame generation on?
 
