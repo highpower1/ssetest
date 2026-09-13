@@ -97,6 +97,9 @@ xmake build SkyrimUpscaler
 - [docs/NEURAL_MODULES.md](docs/NEURAL_MODULES.md) — writing an external neural rendering DLL
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — reading the log, known limitations
 - [docs/SAFETY.md](docs/SAFETY.md) — frame generation and the driver
+- [docs/OPEN_ISSUES.md](docs/OPEN_ISSUES.md) — what is fixed, what is not, and how each was found
+- [docs/NEXUS_DESCRIPTION.bbcode](docs/NEXUS_DESCRIPTION.bbcode) — the mod page text
+- [docs/history/](docs/history/) — working notes from the port, unmaintained
 - [CREDITS.md](CREDITS.md) — upstream projects and licences
 
 ## Licence

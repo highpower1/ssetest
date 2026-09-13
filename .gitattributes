@@ -1,0 +1,14 @@
+# The working tree is Windows and the repository is LF. Without this, git
+# reports "LF will be replaced by CRLF" on almost every commit and diffs pick up
+# line-ending churn that has nothing to do with the change.
+* text=auto eol=lf
+
+# Binary, never touched
+*.dll  binary
+*.pdb  binary
+*.lib  binary
+*.exp  binary
+*.7z   binary
+*.zip  binary
+*.png  binary
+*.dds  binary
