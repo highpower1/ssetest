@@ -1,4 +1,4 @@
-# Disclaimer: This is an AI slop generated with codex and love
+# Disclaimer: This is an AI slop generated with codex and claude code
 
 
 ## SkyrimUpscaler
