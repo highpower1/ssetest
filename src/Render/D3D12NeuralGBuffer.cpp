@@ -387,7 +387,7 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&codecPsoDesc, IID_PPV_ARGS(upliftCodecPipeline.put())));
 
 		// ---- guide textures ---------------------------------------------------
-		const auto createTarget = [&](winrt::com_ptr<ID3D12Resource>& a_out, DXGI_FORMAT a_format) {
+		const auto createTarget = [&](winrt::com_ptr<ID3D12Resource>& a_out, DXGI_FORMAT a_format, bool a_allowUav = false) {
 			D3D12_HEAP_PROPERTIES heap{};
 			heap.Type = D3D12_HEAP_TYPE_DEFAULT;
 
@@ -400,7 +400,8 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 			desc.Format = a_format;
 			desc.SampleDesc.Count = 1;
 			desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-			desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+			desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
+			             (a_allowUav ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE);
 
 			D3D12_CLEAR_VALUE clear{};
 			clear.Format = a_format;
@@ -408,13 +409,15 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 				D3D12_RESOURCE_STATE_COMMON, &clear, IID_PPV_ARGS(a_out.put())));
 		};
 
-		createTarget(normalRoughness, DXGI_FORMAT_R16G16B16A16_FLOAT);
-		createTarget(albedo, DXGI_FORMAT_R8G8B8A8_UNORM);
-		createTarget(specularAlbedo, DXGI_FORMAT_R8G8B8A8_UNORM);
+		// Streamline's RR path may create UAVs for these guides while processing them.
+		createTarget(normalRoughness, DXGI_FORMAT_R16G16B16A16_FLOAT, true);
+		createTarget(albedo, DXGI_FORMAT_R8G8B8A8_UNORM, true);
+		createTarget(specularAlbedo, DXGI_FORMAT_R8G8B8A8_UNORM, true);
 		// Float intermediates for both codec ends: the encoded values are nominally
 		// 0..1, but keeping full precision means the decode is an exact inverse.
 		createTarget(upliftEncoded, DXGI_FORMAT_R16G16B16A16_FLOAT);
-		createTarget(upliftResult, DXGI_FORMAT_R16G16B16A16_FLOAT);
+		// Direct NGX writes the uplift result before the codec draws from it.
+		createTarget(upliftResult, DXGI_FORMAT_R16G16B16A16_FLOAT, true);
 		createTarget(upliftMotion, DXGI_FORMAT_R16G16_FLOAT);
 		createTarget(upliftDepth, DXGI_FORMAT_R32_FLOAT);
 
