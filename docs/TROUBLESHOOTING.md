@@ -5,7 +5,7 @@ redundant alongside it.** Both interpose on the same part of the render pipeline
 and CS already has its own upscaling. If both are installed, that is the first
 thing to fix — no other symptom is worth diagnosing until one of them is gone.
 
-The log is at
+In most cases, the logs are located here.
 `Documents/My Games/Skyrim Special Edition/SKSE/SkyrimUpscaler.log`.
 
 ## Reading a healthy startup
