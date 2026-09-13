@@ -5,6 +5,7 @@
 #include "Game/Renderer.h"
 #include "Game/Util.h"
 #include "Render/D3D12NeuralGBuffer.h"
+#include "Render/DeviceRemovedReport.h"
 #include "Render/DX12SwapChain.h"  // D3D11D3D12SharedTexture
 #include "Render/Streamline.h"
 #include "Render/FidelityFX.h"
@@ -1039,6 +1040,9 @@ void D3D12Upscaler::Evaluate()
 			"[D3D12Upscaler] Evaluate failed; disabling D3D12 upscaling and requesting DLSS-G shutdown: {} removed=0x{:08X}",
 			e.what(),
 			static_cast<uint32_t>(removedReason));
+		// Names the GPU operation that did not complete, which the HRESULT alone
+		// never does.
+		DeviceRemovedReport::Report(d3d12Device.get(), "D3D12Upscaler::Evaluate");
 		if (commandList) {
 			std::ignore = commandList->Close();
 		}

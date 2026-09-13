@@ -7,6 +7,7 @@
 #include "FidelityFX.h"
 #include "OSD.h"
 #include "Streamline.h"
+#include "Render/DeviceRemovedReport.h"
 #include "third_party/RTX40MFGUnlock/integration.h"
 #include "TaggedTextureDebug.h"
 #include "Upscaling.h"
@@ -316,6 +317,9 @@ HRESULT STDMETHODCALLTYPE DXGISwapChainProxy::SetHDRMetaData(DXGI_HDR_METADATA_T
 
 void DX12SwapChain::CreateD3D12Device(IDXGIAdapter* a_adapter, Streamline* a_streamline)
 {
+	// Must precede device creation: DRED cannot be turned on retroactively, and a
+	// removed device otherwise reports only a reason code with no operation.
+	DeviceRemovedReport::Enable();
 	DX::ThrowIfFailed(D3D12CreateDevice(a_adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(d3d12Device.put())));
 
 	// The Ada multi-frame-generation unlock needs the adapter identity before it
@@ -803,6 +807,7 @@ HRESULT DX12SwapChain::ResizeBuffers(UINT a_bufferCount, UINT a_width, UINT a_he
 		return DXGI_ERROR_INVALID_CALL;
 	}
 	if (const auto removedReason = d3d12Device->GetDeviceRemovedReason(); FAILED(removedReason)) {
+		DeviceRemovedReport::Report(d3d12Device.get(), "DX12SwapChain::Present");
 		return removedReason;
 	}
 

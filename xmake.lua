@@ -66,6 +66,8 @@ target("SkyrimUpscaler")
         "src/Render/Streamline.cpp",
         "src/Render/FidelityFX.cpp",
         "src/Render/D3D12UIComposite.cpp",
+        -- Device Removed Extended Data: names the GPU operation behind a lost device
+        "src/Render/DeviceRemovedReport.cpp",
         -- RTX40MFG-Unlock (MIT, github.com/dashdogy/RTX40MFG-Unlock), vendored
         -- via jarari/fo4test: patches the DLSS-G provider policy that caps Ada
         -- (RTX 40) at 2x frame generation.
