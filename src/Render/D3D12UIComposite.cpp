@@ -69,11 +69,16 @@ bool D3D12UIComposite::EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_bac
 		range.BaseShaderRegister = 0;
 		range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-		D3D12_ROOT_PARAMETER rootParameter{};
-		rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		rootParameter.DescriptorTable.NumDescriptorRanges = 1;
-		rootParameter.DescriptorTable.pDescriptorRanges = &range;
-		rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		D3D12_ROOT_PARAMETER rootParameters[2]{};
+		rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+		rootParameters[0].DescriptorTable.NumDescriptorRanges = 1;
+		rootParameters[0].DescriptorTable.pDescriptorRanges = &range;
+		rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+		rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+		rootParameters[1].Constants.ShaderRegister = 0;
+		rootParameters[1].Constants.RegisterSpace = 0;
+		rootParameters[1].Constants.Num32BitValues = 4;
+		rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 		D3D12_STATIC_SAMPLER_DESC samplers[2]{};
 		samplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -87,8 +92,8 @@ bool D3D12UIComposite::EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_bac
 		samplers[1].ShaderRegister = 1;
 
 		D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-		rootDesc.NumParameters = 1;
-		rootDesc.pParameters = &rootParameter;
+		rootDesc.NumParameters = static_cast<UINT>(std::size(rootParameters));
+		rootDesc.pParameters = rootParameters;
 		rootDesc.NumStaticSamplers = static_cast<UINT>(std::size(samplers));
 		rootDesc.pStaticSamplers = samplers;
 		rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
@@ -103,6 +108,14 @@ Texture2D baseColor : register(t0);
 Texture2D postUI : register(t1);
 SamplerState linearSampler : register(s0);
 SamplerState pointSampler : register(s1);
+
+cbuffer Params : register(b0)
+{
+	uint  gDebugView;   // 0 composite, 1 UI layer, 2 mask, 3 scene only
+	uint  gMaskMode;    // 0 linear coverage, 1 soft threshold
+	float gThreshold;
+	float gSoftness;
+};
 
 struct PSInput
 {
@@ -153,8 +166,33 @@ float4 PSMain(PSInput input) : SV_TARGET
 	const float rgbMax = max(afterUI.r, max(afterUI.g, afterUI.b));
 	const float luma = dot(afterUI.rgb, float3(0.2126f, 0.7152f, 0.0722f));
 	const float coverage = max(rgbMax, luma);
-	const float alpha = coverage > 0.01f ? saturate(coverage) : 0.0f;
+
+	// Colour alone cannot separate the UI from whatever else was drawn onto the
+	// cleared target -- ENB's post-processing and late particle passes land there
+	// too, and get composited over the scene as if they were UI. Neither mask
+	// below fixes that; they only move the trade-off, and the debug views exist
+	// so the choice can be made by looking rather than by guessing.
+	float alpha;
+	if (gMaskMode == 1) {
+		// Faint contributions are dropped outright and anything past the knee is
+		// taken as fully opaque UI, instead of the linear ramp's habit of
+		// half-dissolving both the UI and the scene into each other.
+		alpha = smoothstep(gThreshold, gThreshold + max(gSoftness, 1e-4f), coverage);
+	} else {
+		alpha = coverage > 0.01f ? saturate(coverage) : 0.0f;
+	}
+
 	const float3 uiColor = saturate(afterUI.rgb);
+
+	if (gDebugView == 1) {
+		return float4(afterUI.rgb, 1.0f);          // exactly what the composite calls UI
+	}
+	if (gDebugView == 2) {
+		return float4(alpha, alpha, alpha, 1.0f);  // white where the scene is replaced
+	}
+	if (gDebugView == 3) {
+		return float4(base.rgb, 1.0f);             // the upscaled scene, uncomposited
+	}
 	return float4(lerp(base.rgb, uiColor, alpha), 1.0f);
 }
 )";
@@ -222,7 +260,8 @@ void D3D12UIComposite::Render(
 	uint32_t a_width,
 	uint32_t a_height,
 	uint32_t a_descriptorSlot,
-	uint32_t a_descriptorSlotCount)
+	uint32_t a_descriptorSlotCount,
+	const MaskParams& a_mask)
 {
 	if (!a_device || !a_commandList || !a_backBuffer || !a_baseColor || !a_postUI || a_width == 0 || a_height == 0) {
 		return;
@@ -254,6 +293,13 @@ void D3D12UIComposite::Render(
 	auto srvTable = srvHeap->GetGPUDescriptorHandleForHeapStart();
 	srvTable.ptr += static_cast<UINT64>(srvBaseIndex) * srvIncrement;
 	a_commandList->SetGraphicsRootDescriptorTable(0, srvTable);
+	const uint32_t maskConstants[4]{
+		a_mask.debugView,
+		a_mask.maskMode,
+		std::bit_cast<uint32_t>(a_mask.threshold),
+		std::bit_cast<uint32_t>(a_mask.softness)
+	};
+	a_commandList->SetGraphicsRoot32BitConstants(1, 4, maskConstants, 0);
 	D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(a_width), static_cast<float>(a_height), 0.0f, 1.0f };
 	D3D12_RECT scissor{ 0, 0, static_cast<LONG>(a_width), static_cast<LONG>(a_height) };
 	a_commandList->RSSetViewports(1, &viewport);

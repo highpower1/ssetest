@@ -13,6 +13,7 @@
 #include "Upscaling.h"
 
 #include "Game/Util.h"  // Util::State_GetSingleton()->frameCount
+#include "Settings/Settings.h"
 #include "Upscaler/D3D12Upscaler.h"
 
 extern bool enbLoaded;
@@ -978,6 +979,13 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 			CD3DX12_RESOURCE_BARRIER::Transition(overrideFinalColor, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		};
 		commandList->ResourceBarrier(static_cast<UINT>(std::size(beforeComposite)), beforeComposite);
+		const auto& compositeSettings = SettingsStore::GetSingleton()->settings;
+		const D3D12UIComposite::MaskParams maskParams{
+			compositeSettings.uiCompositeDebug,
+			compositeSettings.uiMaskMode,
+			compositeSettings.uiMaskThreshold,
+			compositeSettings.uiMaskSoftness
+		};
 		D3D12UIComposite::GetSingleton()->Render(
 			d3d12Device.get(),
 			commandList,
@@ -988,7 +996,8 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 			swapChainDesc.Width,
 			swapChainDesc.Height,
 			commandContext.index,
-			static_cast<uint32_t>(std::size(commandContexts)));
+			static_cast<uint32_t>(std::size(commandContexts)),
+			maskParams);
 		auto afterComposite = CD3DX12_RESOURCE_BARRIER::Transition(overrideFinalColor, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
 		commandList->ResourceBarrier(1, &afterComposite);
 		destinationState = D3D12_RESOURCE_STATE_RENDER_TARGET;

@@ -60,6 +60,13 @@ public:
 		//   0 = copy the result back into the game's colour target, so ENB grades
 		//       and tonemaps it as usual. Frame generation cannot pace this.
 		uint32_t presentOverride = 1;
+		// The present-override composite decides what is UI by looking at the
+		// cleared colour target. ENB's post-processing lands there too, so these
+		// exist to see what is being classified and to move the line.
+		uint32_t uiCompositeDebug = 0;   // 0 composite, 1 UI layer, 2 mask, 3 scene only
+		uint32_t uiMaskMode = 0;         // 0 linear coverage, 1 soft threshold
+		float    uiMaskThreshold = 0.10f;
+		float    uiMaskSoftness = 0.20f;
 
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR

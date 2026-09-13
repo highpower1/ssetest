@@ -194,6 +194,31 @@ namespace
 			"this mod produces reaches the screen at all. That was measured, not assumed: clearing the "
 			"output to flat magenta changed nothing on screen. Leave this on Present override unless you "
 			"run without ENB.");
+		static constexpr std::array uiMaskModes{ "Linear coverage", "Soft threshold" };
+		changed |= ComboSetting(
+			"UI Mask", settings.uiMaskMode, uiMaskModes,
+			"Under Present override the game's colour target is cleared to black, the UI is drawn onto it, "
+			"and anything not black is composited over the upscaled scene. ENB's post-processing draws "
+			"there too, so where ENB light falls, ENB's pixel replaces the upscaled one -- this is why the "
+			"neural uplift can look like it stops working in lit areas. Linear coverage is the original "
+			"behaviour, which fades brightness into the scene. Soft threshold drops faint contributions "
+			"entirely and takes the rest as opaque UI; raise the threshold until ENB's glow stops "
+			"punching through, then check the HUD still looks right.");
+		ImGuiMCP::BeginDisabled(settings.uiMaskMode == 0);
+		changed |= SliderFloatSetting(
+			"UI Mask Threshold", settings.uiMaskThreshold, 0.0f, 1.0f, "%.3f",
+			"Brightness below which a pixel is treated as scene, not UI.");
+		changed |= SliderFloatSetting(
+			"UI Mask Softness", settings.uiMaskSoftness, 0.0f, 1.0f, "%.3f",
+			"Width of the ramp above the threshold. 0 is a hard edge.");
+		ImGuiMCP::EndDisabled();
+		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only" };
+		changed |= ComboSetting(
+			"UI Composite Debug", settings.uiCompositeDebug, uiCompositeViews,
+			"Shows an intermediate image instead of the composite. UI layer is exactly what the composite "
+			"believes is UI -- everything visible there is being drawn over your scene. Mask shows white "
+			"where the scene is replaced. Scene only shows the upscaled image with nothing composited "
+			"over it.");
 		changed |= CheckboxSetting(
 			"Transparency Hint",
 			settings.transparencyHint,

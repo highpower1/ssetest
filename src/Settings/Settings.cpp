@@ -16,6 +16,11 @@ namespace
 		const long v = a_ini.GetLongValue(kSection, a_key, static_cast<long>(a_out));
 		a_out = static_cast<T>(v);
 	}
+
+	void GetFloat(const CSimpleIniA& a_ini, const char* a_key, float& a_out)
+	{
+		a_out = static_cast<float>(a_ini.GetDoubleValue(kSection, a_key, a_out));
+	}
 }
 
 std::filesystem::path SettingsStore::GetIniPath() const
@@ -52,6 +57,10 @@ void SettingsStore::Load()
 	GetUInt(ini, "TransparencyHint", settings.transparencyHint);
 	GetUInt(ini, "FrameGenWithSteamOverlay", settings.frameGenWithSteamOverlay);
 	GetUInt(ini, "PresentOverride", settings.presentOverride);
+	GetUInt(ini, "UICompositeDebug", settings.uiCompositeDebug);
+	GetUInt(ini, "UIMaskMode", settings.uiMaskMode);
+	GetFloat(ini, "UIMaskThreshold", settings.uiMaskThreshold);
+	GetFloat(ini, "UIMaskSoftness", settings.uiMaskSoftness);
 	GetUInt(ini, "NeuralRayReconstruction", settings.neuralRayReconstruction);
 	GetUInt(ini, "NeuralExternalModules", settings.neuralExternalModules);
 	GetUInt(ini, "DLSSNREnabled", settings.dlssNREnabled);
@@ -109,6 +118,10 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "TransparencyHint", static_cast<long>(a_settings.transparencyHint));
 	ini.SetLongValue(kSection, "FrameGenWithSteamOverlay", static_cast<long>(a_settings.frameGenWithSteamOverlay));
 	ini.SetLongValue(kSection, "PresentOverride", static_cast<long>(a_settings.presentOverride));
+	ini.SetLongValue(kSection, "UICompositeDebug", static_cast<long>(a_settings.uiCompositeDebug));
+	ini.SetLongValue(kSection, "UIMaskMode", static_cast<long>(a_settings.uiMaskMode));
+	ini.SetDoubleValue(kSection, "UIMaskThreshold", a_settings.uiMaskThreshold);
+	ini.SetDoubleValue(kSection, "UIMaskSoftness", a_settings.uiMaskSoftness);
 	ini.SetLongValue(kSection, "NeuralRayReconstruction", static_cast<long>(a_settings.neuralRayReconstruction));
 	ini.SetLongValue(kSection, "NeuralExternalModules", static_cast<long>(a_settings.neuralExternalModules));
 	ini.SetLongValue(kSection, "DLSSNREnabled", static_cast<long>(a_settings.dlssNREnabled));

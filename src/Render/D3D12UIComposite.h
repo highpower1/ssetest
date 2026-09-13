@@ -4,9 +4,22 @@
 #include <dxgi1_6.h>
 #include <winrt/base.h>
 
+#include <bit>
+#include <cstdint>
+
 class D3D12UIComposite
 {
 public:
+	// How the composite decides which pixels of the cleared target are UI, and
+	// which of the intermediate images to show instead of the composite.
+	struct MaskParams
+	{
+		uint32_t debugView = 0;  // 0 composite, 1 UI layer, 2 mask, 3 scene only
+		uint32_t maskMode = 0;   // 0 linear coverage, 1 soft threshold
+		float    threshold = 0.10f;
+		float    softness = 0.20f;
+	};
+
 	static D3D12UIComposite* GetSingleton()
 	{
 		static D3D12UIComposite singleton;
@@ -23,7 +36,8 @@ public:
 		uint32_t a_width,
 		uint32_t a_height,
 		uint32_t a_descriptorSlot,
-		uint32_t a_descriptorSlotCount);
+		uint32_t a_descriptorSlotCount,
+		const MaskParams& a_mask);
 
 private:
 	bool EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_backBufferFormat, uint32_t a_descriptorSlotCount);
