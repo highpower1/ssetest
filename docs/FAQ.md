@@ -136,6 +136,9 @@ To stop it happening, set `UICompositeDebugKey = 0` in
 - **Faces look harsh:** lower **NR Skin Structure**.
 - **Ghosting or trails behind moving things:** make sure **Transparency Hint** is
   on.
+- **Square blocks around the sun or a campfire:** set **NR Colour Encoding** back
+  to **BT.2100 PQ**. The Linear option hands the model brightness values it has
+  no reference for, and the game's bloom then smears the result into tiles.
 
 ## My frame rate got worse
 

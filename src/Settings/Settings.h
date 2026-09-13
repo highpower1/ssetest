@@ -125,7 +125,11 @@ public:
 		// 1 = sRGB, 2 = BT.2100 PQ. The model was trained on a defined encoding
 		// with a known diffuse-white level; Skyrim's scene colour is unbounded
 		// linear HDR with neither, so it is normalised on the way in.
-		uint32_t dlssNREncoding = 1;
+		// 2 = BT.2100 PQ. The default is PQ rather than sRGB because it is the
+		// only one of the three that maps Skyrim's unbounded HDR into the model's
+		// domain without either clipping it or handing it over raw. Linear does
+		// the latter and produces square blocks around the sun and open flames.
+		uint32_t dlssNREncoding = 2;
 		// Scene value that means diffuse white. 0 uses the per-encoding default.
 		float    dlssNRDiffuseWhiteNits = 0.0f;
 		float    dlssNRIntensity = 1.0f;

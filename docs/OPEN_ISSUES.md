@@ -178,6 +178,33 @@ The present override, the UI composite, the difference mask and the grade
 transfer are all unnecessary at this hook point. They remain for the no-ENB case
 and as the path frame generation needs.
 
+## Resolved: square blocks around the sun and open flames
+
+Fixed 2026-09-13. Reported as "square particles coming out of the sun and fire
+when running with ENB".
+
+The shape was the diagnosis. The game's bloom and lens-flare chains downsample
+the colour target the upscaler writes back into, and a downsample spreads one
+bad pixel across the whole tile it lands in. Only the sun and open flames are
+bright enough to produce one, which is why nothing else in the scene showed it.
+
+The cause was the `Linear BT.709` uplift encoding. sRGB and PQ both bound the
+value handed to the model -- sRGB by saturating, PQ by its curve -- while linear
+passes Skyrim's unbounded HDR through untouched, and takes back whatever the
+model returns for values it was never meant to see. Switching the encoding
+removed the artefact outright.
+
+Two changes, because they fix different halves:
+
+- The codec now sanitises both directions: non-finite components are dropped and
+  the value is clamped to a ceiling far above anything a Skyrim scene contains.
+  Applied on the way *in* as well, since feeding the model an infinity is a good
+  way to get one back. This bounds the damage for any encoding.
+- The default encoding is now PQ. It is the only one of the three that carries
+  the full range into the model's domain rather than clipping it or handing it
+  over raw. `Linear BT.709` remains selectable and its menu entry now says what
+  it does.
+
 ## Open: frame generation is unavailable with the Steam overlay
 
 Not a bug to fix here -- the overlay faults on DLSS-G's own present thread. It
