@@ -17,7 +17,9 @@ Reconstruction, DLSS 5 Neural Rendering and AMD FSR to Skyrim Special Edition
 and Anniversary Edition — alongside ENB, configured in-game.
 
 Ported from [jarari/fo4test](https://github.com/jarari/fo4test), the Fallout 4
-upscaler this project is derived from.
+upscaler this project is derived from, which is itself a fork of
+[doodlum/fo4test](https://github.com/doodlum/fo4test). See
+[CREDITS.md](CREDITS.md).
 
 > **Status: experimental.** Every feature listed below has been observed working
 > in-game, on one configuration: an RTX 4070 Ti, AE 1.6.1170, ENB, 1920x1080.

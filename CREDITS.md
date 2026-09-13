@@ -8,13 +8,24 @@ could not enumerate, it is credited as such rather than guessed at.
 
 ## Derived from
 
+This project is two forks removed from where the work started, and both steps
+matter.
+
+- **[doodlum/fo4test](https://github.com/doodlum/fo4test)** by
+  **[doodlum](https://github.com/doodlum)** — the origin. "Advanced reverse
+  engineering projects for Fallout 4", and the repository jarari's fork
+  descends from. Worth naming plainly: doodlum also wrote **Skyrim Community
+  Shaders**, which this mod's own documentation tells people not to run
+  alongside it. The two cannot coexist in one render pipeline. That is a
+  technical fact about interposition and nothing else, and it takes nothing away
+  from the fact that this project stands on their work.
 - **[jarari/fo4test](https://github.com/jarari/fo4test)** by **jarari** — the
-  Fallout 4 upscaler this project is a port of. The D3D12 proxy swapchain, the
-  present override, the Streamline and FidelityFX wrappers, and the DLSS 5
-  Neural Rendering backend all originate there. Its `test/dlss-nr` branch
-  reconstructed the DLSS-NR ABI that NVIDIA has not published, which is the
-  single piece of work without which the Neural Rendering path in this repo
-  would not exist.
+  fork this port was made from, and where the Fallout 4 upscaler took the shape
+  it has here. The D3D12 proxy swapchain, the present override, the Streamline
+  and FidelityFX wrappers, and the DLSS 5 Neural Rendering backend all come
+  through it. Its `test/dlss-nr` branch reconstructed the DLSS-NR ABI that
+  NVIDIA has not published, which is the single piece of work without which the
+  Neural Rendering path in this repo would not exist.
 
 ## Thanks
 
