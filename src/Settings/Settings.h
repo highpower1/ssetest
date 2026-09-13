@@ -68,9 +68,13 @@ public:
 		// views hide the UI, so without a key they cannot be turned off from
 		// inside the game. 0x44 = F10; 0 disables the key.
 		uint32_t uiCompositeDebugKey = 0x44;
-		uint32_t uiMaskMode = 0;         // 0 linear coverage, 1 soft threshold
-		float    uiMaskThreshold = 0.10f;
-		float    uiMaskSoftness = 0.20f;
+		// 2 = the UI-difference mask: the presented buffer is captured again
+		// before the UI is drawn, and only pixels that changed count as UI, so
+		// ENB's output cancels instead of being composited over the scene.
+		// 0 and 1 are the older brightness heuristics, kept as a fallback.
+		uint32_t uiMaskMode = 2;
+		float    uiMaskThreshold = 0.02f;
+		float    uiMaskSoftness = 0.03f;
 
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR

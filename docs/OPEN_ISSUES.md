@@ -92,23 +92,41 @@ passed. The instrument existed; it simply was not pointed at the new path.
 A startup warning now fires for `PresentOverride = 0` with ENB loaded, since the
 combination otherwise reads as "the upscaler does nothing".
 
-## Open: the composite cannot tell ENB's post-processing from UI
+## Resolved: the composite could not tell ENB's post-processing from UI
 
-This is the real cost of the one working output path, and it is what a user
-noticed before it was understood here: "in the places where ENB's light falls,
-the neural rendering seems to revert".
+Fixed 2026-09-13. A user noticed this before it was understood here -- "in the
+places where ENB's light falls, the neural rendering seems to revert" -- and
+that description turned out to be a literal reading of the shader.
 
-Under the present override, `kMAIN` is cleared to black, the game and ENB draw
-onto it, and `D3D12UIComposite` treats any non-black pixel as UI to be laid over
-the scene. ENB's bloom, lens effects and light sprites are non-black. They are
-therefore classified as UI and composited over the uplifted scene, so wherever
-ENB light falls, ENB's version of the pixel replaces ours.
+Under the present override the composite took any non-black pixel of the
+presented buffer as UI. That buffer holds ENB's finished frame too, so the
+composite was computing `lerp(our scene, ENB's scene, brightness)`: a
+brightness-weighted crossfade between the two. Bright areas showed ENB's
+version, dark areas showed ours. Torch flames looked doubled for the same
+reason -- the upscaled flame mixed with ENB's non-upscaled one.
 
-Separately, ENB's tonemapping and grading run against the cleared target and
-never touch the scene at all.
+The fix stops inferring. `DX12SwapChain::CaptureUIBaseline` snapshots the
+presented buffer at the pre-UI hook, after the world and ENB have written it and
+before the UI lands, and a pixel counts as UI only where the final buffer
+differs from that capture. ENB's output is in both and cancels. Brightness
+cannot separate a health bar from a torch flame; "was this pixel changed by the
+UI pass" can.
 
-The fix is to stop inferring UI from luminance and give the composite a real UI
-mask. Until then the two effects are inherent to the working path.
+Verified by the user across all five debug views: the pre-UI capture is the
+scene with no HUD, the mask is the HUD's shape alone, and the fire artefact is
+gone from the composite.
+
+Two method notes worth keeping. First, the decisive step was not reasoning about
+the shader but comparing `Scene only` against the composite on the same frame --
+the fire was correct in one and wrong in the other, which named the culprit in a
+single keypress. Second, the debug views initially hid the UI with no way to
+turn them off from inside the game, and the user was left unable to do anything
+but close Skyrim. An instrument that can trap its user is a defect in the
+instrument; the F10 cycle exists because of it.
+
+Still true: ENB's tonemapping and grading run against the cleared colour target
+and never reach the scene. The mask fixes what was being drawn over the scene,
+not what is missing from it.
 
 ## Open: frame generation is unavailable with the Steam overlay
 

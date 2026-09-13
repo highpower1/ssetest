@@ -56,13 +56,25 @@ override. `kMAIN` is cleared to black so the game's own UI pass draws onto
 black, and `D3D12UIComposite` merges the two at present time: a pixel that is
 not black in the UI buffer is UI, everything else is the scene.
 
-That has a cost worth stating plainly: **ENB's post-processing runs on the
-cleared colour target, so it never touches the scene it is supposed to grade.**
-The scene reaches the screen as the upscaler produced it, without ENB's
-tonemapping, bloom or colour grading. Worse, whatever ENB *does* draw onto that
-cleared target -- bloom, lens effects, its own light sprites -- is non-black,
-and `D3D12UIComposite` classifies non-black as UI, so it is composited over the
-scene. Where ENB light falls, ENB's version of the pixel wins.
+"Not black in the UI buffer" was the original rule and it was wrong. That
+buffer holds ENB's finished frame as well, so brightness classified ENB's own
+output -- bloom, light sprites, torch flames -- as UI and composited it over the
+upscaled scene in proportion to how bright it was. The visible result was that
+the neural uplift appeared to stop working wherever ENB light fell, and that
+fire looked doubled: the upscaled flame crossfaded with ENB's non-upscaled one.
+
+The mask is now derived instead of guessed. `DX12SwapChain::CaptureUIBaseline`
+snapshots the presented buffer at the pre-UI hook, after the world and ENB have
+written it and before the UI is drawn, and the composite takes a pixel as UI
+only where the final buffer differs from that capture. ENB's output appears in
+both and cancels. The capture is recorded on the immediate context the present
+already copies on, so the fence the present signals orders it against the D3D12
+read without extra synchronisation.
+
+`UIMaskMode` selects it (`2`, the default); `0` and `1` are the older brightness
+heuristics, kept because the difference mask is only correct while the capture
+lands at the right point in the frame. The `Pre-UI capture` debug view shows
+what was snapshotted so that stays checkable.
 
 `PresentOverride = 0` is not a way out. It restores the older path -- copy the
 result into `kMAIN` and let the game present normally -- but with ENB installed
