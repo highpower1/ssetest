@@ -155,7 +155,7 @@ bool Upscaling::IsFrameGenerationBlockedByOverlay()
 	static bool loggedOverride = false;
 	if (!loggedOverride) {
 		loggedOverride = true;
-		logger::warn("[Upscaling] Frame generation is running with the Steam overlay loaded, by explicit setting. "
+		logger::warn("[Upscaling] The Steam overlay block on frame generation is lifted by explicit setting; whether frame generation actually runs still depends on FrameGenerationMode. "
 					 "The overlay has faulted on DLSS-G's present thread before; if the game crashes inside "
 					 "gameoverlayrenderer64.dll, this is why.");
 	}
