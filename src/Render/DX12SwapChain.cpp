@@ -599,10 +599,18 @@ void DX12SwapChain::TripDLSSGWatchdog(const char* a_reason, float a_presentMs, f
 	Upscaling::GetSingleton()->frameGenerationActive = false;
 }
 
+ID3D12Resource* DX12SwapChain::GetDLSSGHudlessSource() const
+{
+	if (SettingsStore::GetSingleton()->settings.upscalerHookPoint == 1) {
+		return (uiBaselineValid && uiBaseline) ? uiBaseline->resource12.get() : nullptr;
+	}
+	return D3D12Upscaler::GetSingleton()->GetHudlessColor12();
+}
+
 bool DX12SwapChain::EnsureDLSSGInputBuffers()
 {
 	auto* up = D3D12Upscaler::GetSingleton();
-	auto* hudlessSrc = up->GetHudlessColor12();
+	auto* hudlessSrc = GetDLSSGHudlessSource();
 	auto* mvecSrc = up->GetMotionVectors12();
 	auto* depthSrc = up->GetDepth12();
 	if (!hudlessSrc || !mvecSrc || !depthSrc || !d3d12Device) {
@@ -676,7 +684,16 @@ bool DX12SwapChain::PrepareAndTagDLSSGInputs(ID3D12GraphicsCommandList* a_comman
 	// passed backbuffer -- DLSS-G interpolates the scene and recomposes UI from
 	// (backbuffer - hud-less).
 	std::ignore = a_hudlessSrc;
-	auto* hudlessSrc = up->GetHudlessColor12();
+	auto* hudlessSrc = GetDLSSGHudlessSource();
+	// Which image DLSS-G interpolates decides whether its UI recovery works at
+	// all, and the answer now depends on the hook point. Say it once.
+	if (hudlessSrc != loggedDLSSGHudless) {
+		loggedDLSSGHudless = hudlessSrc;
+		logger::info("[DX12SwapChain] DLSS-G hudless source is {} ({})",
+			static_cast<const void*>(hudlessSrc),
+			(uiBaseline && hudlessSrc == uiBaseline->resource12.get()) ? "pre-UI capture of ENB's frame" :
+				hudlessSrc ? "upscaler output" : "none -- frame generation will stay off");
+	}
 	auto* mvecSrc = up->GetMotionVectors12();
 	auto* depthSrc = up->GetDepth12();
 	if (!hudlessSrc || !mvecSrc || !depthSrc || !EnsureDLSSGInputBuffers()) {

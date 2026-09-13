@@ -445,12 +445,15 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 	// and in-world (IsActive). DLSS-G REQUIRES Reflex, so force Reflex on while
 	// generating (otherwise Streamline reports eFailReflexNotDetectedAtRuntime).
 	// Never re-arm after the present watchdog latched frame generation off.
-	// It also requires the present override: DLSS-G recovers the UI as
-	// backbuffer minus hudless, which only holds while the backbuffer is our
-	// composite. On the copy-back path the backbuffer is ENB's graded image and
-	// that subtraction produces garbage.
+	// DLSS-G recovers the UI as backbuffer minus hudless, so the two have to be
+	// the same image. Under the present override that is our composite and our
+	// own D3D12 output. At the scene-complete hook the backbuffer is ENB's frame
+	// and the matching hudless is the pre-UI capture of it, which
+	// DX12SwapChain::GetDLSSGHudlessSource supplies. Plain copy-back at the old
+	// hook point satisfies neither and stays excluded.
+	const bool sceneCompleteHook = s.upscalerHookPoint == 1;
 	const bool want = Upscaling::kEnableDLSSG && !Upscaling::IsFrameGenerationBlockedByOverlay() &&
-	                  presentOverride && IsActive() && method == 2 && sl->featureDLSSG &&
+	                  (presentOverride || sceneCompleteHook) && IsActive() && method == 2 && sl->featureDLSSG &&
 		s.frameGenerationMode != 0 && !DX12SwapChain::GetSingleton()->IsDLSSGAutoDisabled();
 	sl->UpdateReflex(want ? (s.reflexMode == 0 ? 1u : s.reflexMode) : s.reflexMode, want);
 
@@ -462,7 +465,10 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 		s.dynamicMFGTargetFPS,
 		float2(a_renderW, a_renderH),
 		float2(a_displayW, a_displayH),
-		DXGI_FORMAT_R16G16B16A16_FLOAT,  // hudless color = D3D12-native DLSS output
+		// The hudless is our own float target under the present override, and the
+		// captured backbuffer -- swapchain format -- at the scene-complete hook.
+		sceneCompleteHook ? DX12SwapChain::GetSingleton()->GetBackBufferFormat() :
+		                    DXGI_FORMAT_R16G16B16A16_FLOAT,
 		DXGI_FORMAT_R16G16_FLOAT,        // motion vectors
 		DXGI_FORMAT_R32_FLOAT,           // depth
 		DXGI_FORMAT_UNKNOWN);            // UI recomposed from backbuffer - hudless

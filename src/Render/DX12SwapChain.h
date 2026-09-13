@@ -130,6 +130,14 @@ public:
 	// is the only honest way to tell the UI apart from everything else that also
 	// lands on a target we cleared. Called from the pre-UI render hook.
 	void CaptureUIBaseline();
+
+	// What DLSS-G should interpolate and recompose the UI from. At the pre-UI
+	// hook that is the upscaler's own D3D12 output; at the scene-complete hook
+	// the presented frame is ENB's, and the only image that matches it minus the
+	// UI is the pre-UI capture. Feeding the wrong one makes DLSS-G's
+	// (backbuffer - hudless) recovery produce garbage instead of the UI.
+	[[nodiscard]] ID3D12Resource* GetDLSSGHudlessSource() const;
+	[[nodiscard]] DXGI_FORMAT     GetBackBufferFormat() const { return swapChainDesc.Format; }
 	bool EnsureFidelityFXFrameGenerationSwapChain();
 	HRESULT GetBuffer(UINT a_buffer, REFIID a_riid, void** a_surface);
 	HRESULT GetDevice(REFIID a_riid, void** a_device);
@@ -177,6 +185,7 @@ private:
 	std::unique_ptr<D3D11D3D12SharedTexture> swapChainBufferProxyENB;
 	std::unique_ptr<D3D11D3D12SharedTexture> uiBaseline;
 	bool                                     uiBaselineValid = false;
+	ID3D12Resource*                          loggedDLSSGHudless = nullptr;
 	CommandContext commandContexts[kCommandContextCount];
 	winrt::handle commandFenceEvent;
 	winrt::com_ptr<ID3D12Resource> presentOverrideFinalColor;

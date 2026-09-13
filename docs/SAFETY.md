@@ -42,6 +42,24 @@ and the next frame's overwrite, which is what hung the GPU repeatedly.
 GPU has finished with it, queue waits and signals are checked, GPU waits are
 bounded, and nothing throws across the DXGI Present ABI.
 
+## Frame generation at the scene-complete hook
+
+`UpscalerHookPoint = 1` changes what DLSS-G is given, and the change matters for
+correctness rather than performance. DLSS-G recovers the UI as
+`backbuffer - hudless`, so the two must be the same image. Under the present
+override the backbuffer is our composite and the hudless is our own D3D12
+output. At the scene-complete hook the game presents its own frame, ENB and all,
+and the only image that matches it without the UI is the pre-UI capture --
+`DX12SwapChain::GetDLSSGHudlessSource` returns that instead.
+
+Handing DLSS-G the wrong one does not fail loudly; it interpolates a frame whose
+UI recovery is nonsense. If frame generation is enabled and the HUD smears,
+ghosts, or appears in the wrong place, check the log line naming the hudless
+source before looking anywhere else.
+
+Frame generation is still refused on the plain copy-back path at the old hook
+point, where neither image matches.
+
 ## If it hangs anyway
 
 Frame generation defaults to off and has to be opted into. If the game freezes
