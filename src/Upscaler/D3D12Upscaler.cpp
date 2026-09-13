@@ -812,6 +812,12 @@ void D3D12Upscaler::Evaluate()
 					waitResult,
 					fence->GetCompletedValue(),
 					fenceValue);
+				// This is the first moment a GPU hang is visible to us, and it is
+				// the only moment DRED's breadcrumbs still say which command list
+				// was executing. By the time Present reports a removed device the
+				// runtime has torn the context down, so dump here or not at all.
+				DeviceRemovedReport::DrainMessages(d3d12Device.get(), "fence timeout");
+				DeviceRemovedReport::Report(d3d12Device.get(), "D3D12Upscaler fence timeout");
 				ready = false;
 				return;
 			}

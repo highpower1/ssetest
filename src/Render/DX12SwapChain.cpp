@@ -911,7 +911,15 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 		return DXGI_ERROR_INVALID_CALL;
 	}
 	if (const auto removedReason = d3d12Device->GetDeviceRemovedReason(); FAILED(removedReason)) {
-		logger::critical("[DX12SwapChain] Present rejected because the D3D12 device is removed: 0x{:08X}({})", static_cast<uint32_t>(removedReason), HResultName(removedReason));
+		// Every subsequent present hits this too; the last run logged it 374
+		// times, which buries the frames that led up to the loss. Say it once,
+		// with whatever DRED can still recover, and then stay quiet.
+		static bool reportedRemoval = false;
+		if (!reportedRemoval) {
+			reportedRemoval = true;
+			logger::critical("[DX12SwapChain] Present rejected because the D3D12 device is removed: 0x{:08X}({}); further presents will fail silently", static_cast<uint32_t>(removedReason), HResultName(removedReason));
+			DeviceRemovedReport::Report(d3d12Device.get(), "DX12SwapChain::Present (device removed)");
+		}
 		return removedReason;
 	}
 
