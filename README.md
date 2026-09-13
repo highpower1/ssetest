@@ -1,5 +1,14 @@
 # SkyrimUpscaler
 
+> ## **Do not run this with Community Shaders.**
+>
+> **It is not supported, and it is redundant.** Community Shaders replaces the
+> same part of the render pipeline this plugin interposes on and already
+> provides its own upscaling. Running both means two mods fighting over the
+> scene targets and the present path at once.
+>
+> **Use one or the other, never both.**
+
 An SKSE plugin that brings NVIDIA DLSS, DLSS Frame Generation, DLSS Ray
 Reconstruction, DLSS 5 Neural Rendering and AMD FSR to Skyrim Special Edition
 and Anniversary Edition — alongside ENB, configured in-game.
@@ -34,6 +43,7 @@ upscaler this project is derived from.
 - [SKSE64](https://skse.silverlock.org/)
 - [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352)
 - An NVIDIA RTX GPU for the DLSS features; FSR runs anywhere
+- **Community Shaders must not be installed** — see the warning above
 - The NVIDIA Streamline and AMD FidelityFX runtimes (see Installing)
 
 ## Installing
