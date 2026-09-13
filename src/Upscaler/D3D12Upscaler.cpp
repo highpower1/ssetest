@@ -859,6 +859,20 @@ void D3D12Upscaler::Evaluate()
 			const auto nrHeight = nrAfterUpscale ? displayHeight : GetRenderHeight();
 
 			nrParameters = Streamline::MakeDLSSNRParameters();
+			// Record the configuration whenever it changes, so a sweep's log says
+			// which settings produced which stretch of frames.
+			{
+				const auto& o = nrParameters.options;
+				const auto fingerprint = o.style * 1000u + o.preset * 100u + nrParameters.passCount * 10u +
+				                         (o.useAutoMask ? 1u : 0u);
+				if (fingerprint != loggedNeuralConfig) {
+					loggedNeuralConfig = fingerprint;
+					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f} encoding={}",
+						o.style, o.preset, nrParameters.passCount, o.useAutoMask,
+						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength,
+						neuralEncoding);
+				}
+			}
 			nrParameters.inputWidth = nrParameters.outputWidth = nrParameters.guideWidth = nrWidth;
 			nrParameters.inputHeight = nrParameters.outputHeight = nrParameters.guideHeight = nrHeight;
 

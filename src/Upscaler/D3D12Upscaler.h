@@ -197,6 +197,7 @@ private:
 	ID3D12Resource* resolvedSceneColor = nullptr;
 	ID3D12Resource* loggedPresentOverride = nullptr;
 	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
+	uint32_t loggedNeuralConfig = 0xFFFFFFFF;
 	bool     transparencyHint = true;
 	bool     loggedTransparencyMismatch = false;
 	uint32_t pendingDisplayWidth = 0;
