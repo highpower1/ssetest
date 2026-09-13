@@ -18,6 +18,10 @@ public:
 		uint32_t maskMode = 0;   // 0 linear coverage, 1 soft threshold, 2 difference from the baseline
 		float    threshold = 0.10f;
 		float    softness = 0.20f;
+		uint32_t gradeTransfer = 0;
+		float    gradeStrength = 1.0f;
+		float    gradeTexelU = 0.0f;
+		float    gradeTexelV = 0.0f;
 	};
 
 	static D3D12UIComposite* GetSingleton()

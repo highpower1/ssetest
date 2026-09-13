@@ -71,6 +71,12 @@ public:
 		// Finds which render target ENB actually reads, by filling one at a time
 		// with magenta and watching ENB's own output for it. 0 off, 1 sweep,
 		// 2+ pin to candidate (value - 2). See Diagnostics/SceneTargetProbe.
+		// ENB runs before our hook and grades the game's own scene, so ours
+		// reaches the screen ungraded. Carry the grade across from the captured
+		// ENB frame instead. Radius is in display pixels.
+		uint32_t enbGradeTransfer = 0;
+		float    enbGradeStrength = 1.0f;
+		float    enbGradeRadius = 8.0f;
 		uint32_t sceneTargetProbe = 0;
 		uint32_t sceneTargetProbeFrames = 180;
 		uint32_t sceneTargetProbeMarkKey = 0x57;  // F11

@@ -987,11 +987,18 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 		}
 		commandList->ResourceBarrier(static_cast<UINT>(std::size(beforeComposite)), beforeComposite);
 		const auto& compositeSettings = SettingsStore::GetSingleton()->settings;
+		const float gradeRadius = compositeSettings.enbGradeRadius;
 		const D3D12UIComposite::MaskParams maskParams{
 			compositeSettings.uiCompositeDebug,
 			compositeSettings.uiMaskMode,
 			compositeSettings.uiMaskThreshold,
-			compositeSettings.uiMaskSoftness
+			compositeSettings.uiMaskSoftness,
+			// The transfer needs the ENB capture; without it the ratio is against
+			// postUI, which already contains the UI and would smear it everywhere.
+			(compositeSettings.enbGradeTransfer != 0 && uiBaselineValid) ? 1u : 0u,
+			compositeSettings.enbGradeStrength,
+			swapChainDesc.Width > 0 ? gradeRadius / static_cast<float>(swapChainDesc.Width) : 0.0f,
+			swapChainDesc.Height > 0 ? gradeRadius / static_cast<float>(swapChainDesc.Height) : 0.0f
 		};
 		D3D12UIComposite::GetSingleton()->Render(
 			d3d12Device.get(),

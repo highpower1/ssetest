@@ -215,6 +215,23 @@ namespace
 			"UI Mask Softness", settings.uiMaskSoftness, 0.0f, 1.0f, "%.3f",
 			"Width of the ramp above the threshold. 0 is a hard edge.");
 		ImGuiMCP::EndDisabled();
+		changed |= CheckboxSetting(
+			"ENB Grade Transfer",
+			settings.enbGradeTransfer,
+			"ENB runs before this mod's hook and grades the game's own copy of the scene, so the upscaled "
+			"image reaches the screen without ENB's tonemapping or colour. This carries the grade across: "
+			"the low frequencies of ENB's finished frame are divided by the low frequencies of ours and "
+			"applied as a ratio, which moves the colour and tonemapping over while leaving the detail DLSS "
+			"and the neural uplift produced untouched. It is a transfer, not ENB's actual post-processing.");
+		ImGuiMCP::BeginDisabled(settings.enbGradeTransfer == 0);
+		changed |= SliderFloatSetting(
+			"ENB Grade Strength", settings.enbGradeStrength, 0.0f, 1.0f, "%.2f",
+			"0 leaves the scene as the upscaler produced it, 1 applies the full transferred grade.");
+		changed |= SliderFloatSetting(
+			"ENB Grade Radius", settings.enbGradeRadius, 1.0f, 64.0f, "%.0f px",
+			"How wide a neighbourhood counts as low frequency. Small keeps more of ENB's local contrast but "
+			"starts eating the upscaler's detail; large transfers only the overall colour and exposure.");
+		ImGuiMCP::EndDisabled();
 		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only", "Pre-UI capture", "Split: ours | ENB" };
 		changed |= ComboSetting(
 			"UI Composite Debug", settings.uiCompositeDebug, uiCompositeViews,

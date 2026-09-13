@@ -77,7 +77,7 @@ bool D3D12UIComposite::EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_bac
 		rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 		rootParameters[1].Constants.ShaderRegister = 0;
 		rootParameters[1].Constants.RegisterSpace = 0;
-		rootParameters[1].Constants.Num32BitValues = 4;
+		rootParameters[1].Constants.Num32BitValues = 8;
 		rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
 		D3D12_STATIC_SAMPLER_DESC samplers[2]{};
@@ -112,11 +112,46 @@ SamplerState pointSampler : register(s1);
 
 cbuffer Params : register(b0)
 {
-	uint  gDebugView;   // 0 composite, 1 UI layer, 2 mask, 3 scene only
-	uint  gMaskMode;    // 0 linear coverage, 1 soft threshold
+	uint  gDebugView;   // 0 composite, 1 UI layer, 2 mask, 3 scene only, 4 baseline, 5 split, 6 graded
+	uint  gMaskMode;    // 0 linear coverage, 1 soft threshold, 2 difference from the baseline
 	float gThreshold;
 	float gSoftness;
+	uint  gGradeTransfer;
+	float gGradeStrength;
+	float2 gGradeTexel;  // blur step in UV, already scaled by the radius
 };
+
+// ENB grades the game's own scene and writes it to the buffer we capture as
+// uiBaseline; the scene we upscale never goes through it, so our output reaches
+// the screen ungraded. Both images are already bound here, so the grade can be
+// carried across: take the ratio of their low frequencies and apply it to ours.
+// Low frequency is the part that is tonemapping and colour; the high frequency
+// is the part DLSS and the neural uplift produced, and multiplying leaves it
+// intact. This is a transfer, not ENB's actual post-processing -- effects that
+// live purely in the high frequencies do not come across.
+float3 LowPass(Texture2D tex, float2 uv)
+{
+	// Thirteen bilinear taps on two rings. Enough for tonemapping and colour
+	// grading, which vary slowly; too tight for bloom, which is why the radius
+	// is exposed rather than baked in.
+	static const float2 kRing1[4] = { float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1) };
+	static const float2 kRing2[8] = {
+		float2(2, 0), float2(-2, 0), float2(0, 2), float2(0, -2),
+		float2(1.4f, 1.4f), float2(-1.4f, 1.4f), float2(1.4f, -1.4f), float2(-1.4f, -1.4f)
+	};
+
+	float3 sum = tex.Sample(linearSampler, uv).rgb * 3.0f;
+	float  weight = 3.0f;
+	[unroll] for (int i = 0; i < 4; ++i) {
+		sum += tex.Sample(linearSampler, uv + kRing1[i] * gGradeTexel).rgb * 2.0f;
+		weight += 2.0f;
+	}
+	[unroll] for (int j = 0; j < 8; ++j) {
+		sum += tex.Sample(linearSampler, uv + kRing2[j] * gGradeTexel).rgb;
+		weight += 1.0f;
+	}
+	return sum / weight;
+}
 
 struct PSInput
 {
@@ -151,8 +186,17 @@ PSInput VSMain(uint vertexId : SV_VertexID)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-	const float4 base = baseColor.Sample(linearSampler, input.uv);
+	float4 base = baseColor.Sample(linearSampler, input.uv);
 	const float4 afterUI = postUI.Sample(pointSampler, input.uv);
+
+	if (gGradeTransfer != 0) {
+		const float3 oursLow = LowPass(baseColor, input.uv);
+		const float3 enbLow = LowPass(uiBaseline, input.uv);
+		// Clamped because near-black divides blow up, and a runaway ratio here
+		// would paint fireflies over the whole scene.
+		const float3 ratio = clamp((enbLow + 1e-3f) / (oursLow + 1e-3f), 0.0f, 8.0f);
+		base.rgb *= lerp(1.0f.xxx, ratio, saturate(gGradeStrength));
+	}
 
 	// postUI is the game's own frame with the scene cleared to black, so a pixel
 	// belongs to the UI exactly when something was drawn there -- i.e. when it is
@@ -201,7 +245,7 @@ float4 PSMain(PSInput input) : SV_TARGET
 		return float4(alpha, alpha, alpha, 1.0f);  // white where the scene is replaced
 	}
 	if (gDebugView == 3) {
-		return float4(base.rgb, 1.0f);             // the upscaled scene, uncomposited
+		return float4(base.rgb, 1.0f);             // the upscaled scene, uncomposited (graded, if enabled)
 	}
 	if (gDebugView == 4) {
 		return float4(uiBaseline.Sample(pointSampler, input.uv).rgb, 1.0f);  // the pre-UI capture
@@ -322,13 +366,17 @@ void D3D12UIComposite::Render(
 	auto srvTable = srvHeap->GetGPUDescriptorHandleForHeapStart();
 	srvTable.ptr += static_cast<UINT64>(srvBaseIndex) * srvIncrement;
 	a_commandList->SetGraphicsRootDescriptorTable(0, srvTable);
-	const uint32_t maskConstants[4]{
+	const uint32_t maskConstants[8]{
 		a_mask.debugView,
 		a_mask.maskMode,
 		std::bit_cast<uint32_t>(a_mask.threshold),
-		std::bit_cast<uint32_t>(a_mask.softness)
+		std::bit_cast<uint32_t>(a_mask.softness),
+		a_mask.gradeTransfer,
+		std::bit_cast<uint32_t>(a_mask.gradeStrength),
+		std::bit_cast<uint32_t>(a_mask.gradeTexelU),
+		std::bit_cast<uint32_t>(a_mask.gradeTexelV)
 	};
-	a_commandList->SetGraphicsRoot32BitConstants(1, 4, maskConstants, 0);
+	a_commandList->SetGraphicsRoot32BitConstants(1, 8, maskConstants, 0);
 	D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(a_width), static_cast<float>(a_height), 0.0f, 1.0f };
 	D3D12_RECT scissor{ 0, 0, static_cast<LONG>(a_width), static_cast<LONG>(a_height) };
 	a_commandList->RSSetViewports(1, &viewport);

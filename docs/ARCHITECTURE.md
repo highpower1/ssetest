@@ -76,6 +76,36 @@ heuristics, kept because the difference mask is only correct while the capture
 lands at the right point in the frame. The `Pre-UI capture` debug view shows
 what was snapshotted so that stays checkable.
 
+## Where ENB sits, and the grade transfer
+
+A magenta sweep over the engine's render targets found the one ENB's output
+lands in: `kFRAMEBUFFER`, which under the proxy is the buffer `GetBuffer` hands
+out. Magenta written there at the pre-UI hook survived to the screen, so nothing
+writes the scene into it after that point. The frame is therefore:
+
+1. the game renders the scene into `kMAIN` (HDR, ungraded)
+2. **ENB post-processes and writes `kFRAMEBUFFER`**
+3. our pre-UI hook reads `kMAIN` and upscales
+4. the UI is drawn into `kFRAMEBUFFER`
+5. present
+
+ENB is upstream of us. That is why writing into `kMAIN` reaches nothing -- ENB
+has already read it -- and why the scene we upscale is the ungraded one. It also
+means `uiBaseline`, the capture the UI mask subtracts, is ENB's finished frame.
+
+Both images are consequently bound in the composite at once, and
+`ENBGradeTransfer` uses that: the low frequencies of ENB's frame divided by the
+low frequencies of ours, applied to ours as a ratio. Tonemapping and colour
+grading live in those low frequencies and come across; the detail DLSS and the
+neural uplift produced is high-frequency and survives the multiply. Effects that
+are purely high-frequency do not transfer, and bloom transfers only as far as
+`ENBGradeRadius` reaches.
+
+This is a workaround for the hook's position, not a fix for it. The fix is to
+run the upscaler before step 2, so ENB grades our image instead of the game's;
+that needs a hook site inside `Main_DrawWorld` earlier than the one PureDark's
+offsets provide, and has not been attempted.
+
 `PresentOverride = 0` is not a way out. It restores the older path -- copy the
 result into `kMAIN` and let the game present normally -- but with ENB installed
 that path is dead: **ENB's chain overwrites `kMAIN` after we write it, so
