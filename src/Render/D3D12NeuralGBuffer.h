@@ -180,6 +180,9 @@ private:
 	winrt::com_ptr<ID3D12Resource> upliftMotion;
 	winrt::com_ptr<ID3D12Resource> upliftDepth;
 
+	// Which resource the decode RTV slot currently views; the view is only
+	// rebuilt when the caller's destination actually changes.
+	ID3D12Resource* decodeDestination = nullptr;
 	std::uint32_t currentWidth = 0;
 	std::uint32_t currentHeight = 0;
 	bool          constantsCleared = false;

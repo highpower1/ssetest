@@ -61,7 +61,8 @@ namespace
 	constexpr std::uint32_t kRTVUpliftMotion = 3;
 	constexpr std::uint32_t kRTVUpliftDepth = 4;
 	constexpr std::uint32_t kRTVUpliftEncoded = 5;
-	constexpr std::uint32_t kRTVCount = 6;
+	constexpr std::uint32_t kRTVUpliftDecodeDst = 6;
+	constexpr std::uint32_t kRTVCount = 7;
 
 	const char* const kShaderSource = R"(
 Texture2D<float> CameraZ : register(t0);
@@ -295,6 +296,7 @@ void D3D12NeuralGBuffer::Reset()
 	upliftDepth = nullptr;
 	currentWidth = 0;
 	currentHeight = 0;
+	decodeDestination = nullptr;
 	constantsCleared = false;
 	creationFailed = false;
 }
@@ -679,19 +681,23 @@ bool D3D12NeuralGBuffer::DecodeFromUplift(
 	if (!EnsureResources(a_device, a_width, a_height) || !upliftResult) {
 		return false;
 	}
-	// The destination is the caller's own target, so it needs an RTV of its own
-	// rather than one of ours; reuse the encoded slot, which is free by now.
-	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-	auto       rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
-	rtv.ptr += static_cast<SIZE_T>(kRTVUpliftEncoded) * rtvIncrement;
-	a_device->CreateRenderTargetView(a_destination, nullptr, rtv);
+	// The destination belongs to the caller, so it needs a render target view of
+	// its own. It gets a dedicated slot: a command list records only a handle and
+	// the GPU reads the descriptor's contents at execute time, so a slot shared
+	// with the encode pass and rewritten after recording would send BOTH draws to
+	// whichever resource the descriptor happened to hold last -- the decode would
+	// never reach the destination, and the encoded texture would be bound as a
+	// render target while NGX still had it bound for reading.
+	if (decodeDestination != a_destination) {
+		const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		auto       rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+		rtv.ptr += static_cast<SIZE_T>(kRTVUpliftDecodeDst) * rtvIncrement;
+		a_device->CreateRenderTargetView(a_destination, nullptr, rtv);
+		decodeDestination = a_destination;
+	}
 
-	const bool ok = RunUpliftCodec(a_device, a_commandList, upliftResult.get(), a_destination,
-		kRTVUpliftEncoded, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits);
-
-	// Put the slot back so the next frame's encode writes upliftEncoded again.
-	a_device->CreateRenderTargetView(upliftEncoded.get(), nullptr, rtv);
-	return ok;
+	return RunUpliftCodec(a_device, a_commandList, upliftResult.get(), a_destination,
+		kRTVUpliftDecodeDst, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits);
 }
 
 bool D3D12NeuralGBuffer::GenerateUpliftGuides(
