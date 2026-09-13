@@ -4,6 +4,7 @@
 
 #include "Game/Util.h"
 #include "Game/Renderer.h"
+#include "Diagnostics/FrameTimeline.h"
 #include "Diagnostics/SceneTargetProbe.h"
 #include "Neural/NeuralRendering.h"
 #include "Render/DX12SwapChain.h"
@@ -67,6 +68,9 @@ namespace
 			// D3D12 device + Streamline init (see D3D12Upscaler::Init), so it is
 			// safe to init here too -- no second Streamline D3D12 initialisation.
 			D3D12Upscaler::GetSingleton()->Init();
+			// Log-only interception of the game's render-target binds; nothing is
+			// captured until a key arms it.
+			FrameTimeline::Install();
 		}
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
@@ -171,6 +175,7 @@ namespace
 			// Diagnostic only, off unless SceneTargetProbe is set: paint one
 			// candidate render target magenta so ENB's output says whether it
 			// reads that one.
+			FrameTimeline::Mark("pre-UI hook: upscaler runs here");
 			SceneTargetProbe::Tick();
 			NeuralRendering::GetSingleton()->OnFrame();
 			// Approach 1 eval: process the main color through the D3D12 interop
@@ -181,6 +186,8 @@ namespace
 			// by here; the UI has not. Snapshot it so the composite can subtract
 			// this from the final buffer and get the UI on its own.
 			DX12SwapChain::GetSingleton()->CaptureUIBaseline();
+			FrameTimeline::Mark("pre-UI hook: UI baseline captured");
+			FrameTimeline::OnFrameBoundary();
 			if (n <= 3 || (n % 600) == 0) {
 				logger::info("[UpscalerHooks] MainDrawWorld(pre-UI) fired frame={}", n);
 			}

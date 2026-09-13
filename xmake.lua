@@ -48,6 +48,8 @@ target("SkyrimUpscaler")
         "src/Diagnostics/Probe.cpp",
         -- finds which render target ENB consumes, by painting one magenta
         "src/Diagnostics/SceneTargetProbe.cpp",
+        -- one frame of render-target binds, to place ENB in the frame
+        "src/Diagnostics/FrameTimeline.cpp",
         "src/Game/Renderer.cpp",
         "src/Game/Util.cpp",
         -- Device capture plus the IDXGIFactory::CreateSwapChain hook that
