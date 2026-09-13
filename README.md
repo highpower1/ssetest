@@ -61,7 +61,12 @@ upscaler this project is derived from.
    matching `nvngx_*.dll` model files.
 3. For DLSS 5 Neural Rendering, add `sl.dlss_nr.dll` and `nvngx_dlssnr.dll`.
    On RTX 20/30/40 the stock `nvngx_dlssnr.dll` will not run — its CUDA payload
-   targets Blackwell — and a patched build is required.
+   targets Blackwell — and a patched build is required. The
+   **[RenoDX Discord](https://discord.com/invite/renodx)** is where that work
+   happens and where those DLLs are shared; this project would not have a
+   working Neural Rendering path without them. A quick way to tell the two
+   apart: search the DLL for the string `sm_120`. If it is the only
+   architecture present, the file is Blackwell-only.
 4. Place the AMD FidelityFX DLLs next to `SkyrimUpscaler.dll` for the FSR path.
 
 Runtime DLLs are not distributed here. The plugin logs each one it looks for as
