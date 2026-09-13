@@ -50,7 +50,9 @@ namespace
 	constexpr std::uint32_t kSRVNormalsUnused = 1;
 	constexpr std::uint32_t kSRVUpliftMotion = 2;
 	constexpr std::uint32_t kSRVUpliftDepth = 3;
-	constexpr std::uint32_t kSRVCount = 4;
+	constexpr std::uint32_t kSRVUpliftEncodeSrc = 4;
+	constexpr std::uint32_t kSRVUpliftDecodeSrc = 6;
+	constexpr std::uint32_t kSRVCount = 8;
 
 	// Descriptor slots in rtvHeap.
 	constexpr std::uint32_t kRTVNormalRoughness = 0;
@@ -58,7 +60,8 @@ namespace
 	constexpr std::uint32_t kRTVSpecularAlbedo = 2;
 	constexpr std::uint32_t kRTVUpliftMotion = 3;
 	constexpr std::uint32_t kRTVUpliftDepth = 4;
-	constexpr std::uint32_t kRTVCount = 5;
+	constexpr std::uint32_t kRTVUpliftEncoded = 5;
+	constexpr std::uint32_t kRTVCount = 6;
 
 	const char* const kShaderSource = R"(
 Texture2D<float> CameraZ : register(t0);
@@ -128,6 +131,100 @@ float4 PSMain(PSInput input) : SV_TARGET
 }
 )";
 
+	// Colour encode / decode around the uplift. The model was trained on a
+	// defined encoding with a known diffuse-white level; Skyrim's scene colour is
+	// unbounded linear HDR with neither, so normalise into that space and undo it
+	// afterwards. Decode is the exact inverse, so the round trip is lossless for
+	// anything the model leaves untouched.
+	const char* const kUpliftCodecSource = R"(
+Texture2D<float4> Source : register(t0);
+
+cbuffer Params : register(b0)
+{
+	float4 Codec;  // x = decode?, y = encoding, z = diffuse white scale, w = unused
+};
+
+struct PSInput
+{
+	float4 position : SV_POSITION;
+};
+
+PSInput VSMain(uint vertexId : SV_VertexID)
+{
+	static const float2 positions[3] = {
+		float2(-1.0f,  3.0f),
+		float2(-1.0f, -1.0f),
+		float2( 3.0f, -1.0f)
+	};
+	PSInput output;
+	output.position = float4(positions[vertexId], 0.0f, 1.0f);
+	return output;
+}
+
+float3 LinearToSRGB(float3 c)
+{
+	c = saturate(c);
+	return c <= 0.0031308f ? c * 12.92f : 1.055f * pow(c, 1.0f / 2.4f) - 0.055f;
+}
+
+float3 SRGBToLinear(float3 c)
+{
+	c = saturate(c);
+	return c <= 0.04045f ? c / 12.92f : pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+// BT.2100 PQ (SMPTE ST 2084), normalised so 1.0 is 10000 nits.
+float3 LinearToPQ(float3 c)
+{
+	const float m1 = 0.1593017578125f;
+	const float m2 = 78.84375f;
+	const float c1 = 0.8359375f;
+	const float c2 = 18.8515625f;
+	const float c3 = 18.6875f;
+	const float3 y = pow(max(c, 0.0f), m1);
+	return pow((c1 + c2 * y) / (1.0f + c3 * y), m2);
+}
+
+float3 PQToLinear(float3 c)
+{
+	const float m1 = 0.1593017578125f;
+	const float m2 = 78.84375f;
+	const float c1 = 0.8359375f;
+	const float c2 = 18.8515625f;
+	const float c3 = 18.6875f;
+	const float3 e = pow(max(c, 0.0f), 1.0f / m2);
+	return pow(max(e - c1, 0.0f) / (c2 - c3 * e), 1.0f / m1);
+}
+
+float4 PSMain(PSInput input) : SV_TARGET
+{
+	const float4 source = Source.Load(int3(int2(input.position.xy), 0));
+	const bool  decode = Codec.x > 0.5f;
+	const uint  encoding = (uint)Codec.y;
+	const float whiteScale = max(Codec.z, 1e-6f);
+
+	float3 c = source.rgb;
+	if (!decode) {
+		// Scene linear -> the model's space. whiteScale maps the scene value that
+		// means "diffuse white" onto 1.0 (or onto its nits fraction, for PQ).
+		c = max(c, 0.0f) * whiteScale;
+		if (encoding == 1u) {
+			c = LinearToSRGB(c);
+		} else if (encoding == 2u) {
+			c = LinearToPQ(c);
+		}
+	} else {
+		if (encoding == 1u) {
+			c = SRGBToLinear(c);
+		} else if (encoding == 2u) {
+			c = PQToLinear(c);
+		}
+		c = max(c, 0.0f) / whiteScale;
+	}
+	return float4(c, source.a);
+}
+)";
+
 	// Resample the engine's render-resolution, jitter-rasterised motion vectors
 	// and depth up to display resolution for the post-upscale uplift.
 	const char* const kUpliftGuideSource = R"(
@@ -188,9 +285,12 @@ void D3D12NeuralGBuffer::Reset()
 	srvHeap = nullptr;
 	rtvHeap = nullptr;
 	upliftGuidePipeline = nullptr;
+	upliftCodecPipeline = nullptr;
 	normalRoughness = nullptr;
 	albedo = nullptr;
 	specularAlbedo = nullptr;
+	upliftEncoded = nullptr;
+	upliftResult = nullptr;
 	upliftMotion = nullptr;
 	upliftDepth = nullptr;
 	currentWidth = 0;
@@ -274,6 +374,16 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		guidePsoDesc.RTVFormats[1] = DXGI_FORMAT_R32_FLOAT;
 		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&guidePsoDesc, IID_PPV_ARGS(upliftGuidePipeline.put())));
 
+		auto codecVertexShader = CompileShader(kUpliftCodecSource, "VSMain", "vs_5_0");
+		auto codecPixelShader = CompileShader(kUpliftCodecSource, "PSMain", "ps_5_0");
+
+		auto codecPsoDesc = psoDesc;
+		codecPsoDesc.VS = { codecVertexShader->GetBufferPointer(), codecVertexShader->GetBufferSize() };
+		codecPsoDesc.PS = { codecPixelShader->GetBufferPointer(), codecPixelShader->GetBufferSize() };
+		codecPsoDesc.NumRenderTargets = 1;
+		codecPsoDesc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
+		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&codecPsoDesc, IID_PPV_ARGS(upliftCodecPipeline.put())));
+
 		// ---- guide textures ---------------------------------------------------
 		const auto createTarget = [&](winrt::com_ptr<ID3D12Resource>& a_out, DXGI_FORMAT a_format) {
 			D3D12_HEAP_PROPERTIES heap{};
@@ -299,6 +409,10 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		createTarget(normalRoughness, DXGI_FORMAT_R16G16B16A16_FLOAT);
 		createTarget(albedo, DXGI_FORMAT_R8G8B8A8_UNORM);
 		createTarget(specularAlbedo, DXGI_FORMAT_R8G8B8A8_UNORM);
+		// Float intermediates for both codec ends: the encoded values are nominally
+		// 0..1, but keeping full precision means the decode is an exact inverse.
+		createTarget(upliftEncoded, DXGI_FORMAT_R16G16B16A16_FLOAT);
+		createTarget(upliftResult, DXGI_FORMAT_R16G16B16A16_FLOAT);
 		createTarget(upliftMotion, DXGI_FORMAT_R16G16_FLOAT);
 		createTarget(upliftDepth, DXGI_FORMAT_R32_FLOAT);
 
@@ -325,6 +439,8 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		a_device->CreateRenderTargetView(upliftMotion.get(), nullptr, rtv);
 		rtv.ptr += rtvIncrement;
 		a_device->CreateRenderTargetView(upliftDepth.get(), nullptr, rtv);
+		rtv.ptr += rtvIncrement;
+		a_device->CreateRenderTargetView(upliftEncoded.get(), nullptr, rtv);
 	} catch (const std::exception& e) {
 		logger::warn("[NeuralGBuffer] Resource creation failed ({}x{}): {}", a_width, a_height, e.what());
 		const auto failedWidth = currentWidth;
@@ -457,6 +573,125 @@ bool D3D12NeuralGBuffer::Generate(
 	Transition(a_commandList, normalRoughness.get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
 	Transition(a_commandList, a_depth, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
 	return true;
+}
+
+
+bool D3D12NeuralGBuffer::RunUpliftCodec(
+	ID3D12Device*              a_device,
+	ID3D12GraphicsCommandList* a_commandList,
+	ID3D12Resource*            a_source,
+	ID3D12Resource*            a_destination,
+	std::uint32_t              a_destinationRTV,
+	std::uint32_t              a_sourceSRV,
+	std::uint32_t              a_width,
+	std::uint32_t              a_height,
+	bool                       a_decode,
+	UpliftEncoding             a_encoding,
+	float                      a_diffuseWhiteNits)
+{
+	if (!a_device || !a_commandList || !a_source || !a_destination || a_width == 0 || a_height == 0) {
+		return false;
+	}
+	if (!EnsureResources(a_device, a_width, a_height) || !upliftCodecPipeline) {
+		return false;
+	}
+
+	struct Params
+	{
+		float codec[4];
+	} params{};
+
+	params.codec[0] = a_decode ? 1.0f : 0.0f;
+	params.codec[1] = static_cast<float>(a_encoding);
+	// PQ is absolute: 1.0 means 10000 nits, so diffuse white lands at its own
+	// fraction of that. The relative encodings put diffuse white at 1.0, and the
+	// nits value only says which of them was intended.
+	params.codec[2] = a_encoding == UpliftEncoding::kPQ ? (a_diffuseWhiteNits / 10000.0f) : 1.0f;
+
+	Transition(a_commandList, a_source, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(a_commandList, a_destination, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+	const auto srvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Texture2D.MipLevels = 1;
+
+	auto srvCpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
+	srvCpu.ptr += static_cast<SIZE_T>(a_sourceSRV) * srvIncrement;
+	a_device->CreateShaderResourceView(a_source, &srvDesc, srvCpu);
+	// The table is two SRVs wide; t1 is unread but must still be valid.
+	srvCpu.ptr += srvIncrement;
+	a_device->CreateShaderResourceView(a_source, &srvDesc, srvCpu);
+
+	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	auto       rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+	rtv.ptr += static_cast<SIZE_T>(a_destinationRTV) * rtvIncrement;
+	a_commandList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+
+	ID3D12DescriptorHeap* heaps[] = { srvHeap.get() };
+	a_commandList->SetDescriptorHeaps(static_cast<UINT>(std::size(heaps)), heaps);
+	a_commandList->SetGraphicsRootSignature(rootSignature.get());
+	a_commandList->SetPipelineState(upliftCodecPipeline.get());
+	auto srvTable = srvHeap->GetGPUDescriptorHandleForHeapStart();
+	srvTable.ptr += static_cast<UINT64>(a_sourceSRV) * srvIncrement;
+	a_commandList->SetGraphicsRootDescriptorTable(0, srvTable);
+	a_commandList->SetGraphicsRoot32BitConstants(1, 4, &params, 0);
+	a_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(a_width), static_cast<float>(a_height), 0.0f, 1.0f };
+	const D3D12_RECT     scissor{ 0, 0, static_cast<LONG>(a_width), static_cast<LONG>(a_height) };
+	a_commandList->RSSetViewports(1, &viewport);
+	a_commandList->RSSetScissorRects(1, &scissor);
+	a_commandList->DrawInstanced(3, 1, 0, 0);
+
+	Transition(a_commandList, a_destination, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, a_source, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+	return true;
+}
+
+bool D3D12NeuralGBuffer::EncodeForUplift(
+	ID3D12Device*              a_device,
+	ID3D12GraphicsCommandList* a_commandList,
+	ID3D12Resource*            a_sceneColor,
+	std::uint32_t              a_width,
+	std::uint32_t              a_height,
+	UpliftEncoding             a_encoding,
+	float                      a_diffuseWhiteNits)
+{
+	if (!EnsureResources(a_device, a_width, a_height)) {
+		return false;
+	}
+	return RunUpliftCodec(a_device, a_commandList, a_sceneColor, upliftEncoded.get(),
+		kRTVUpliftEncoded, kSRVUpliftEncodeSrc, a_width, a_height, false, a_encoding, a_diffuseWhiteNits);
+}
+
+bool D3D12NeuralGBuffer::DecodeFromUplift(
+	ID3D12Device*              a_device,
+	ID3D12GraphicsCommandList* a_commandList,
+	ID3D12Resource*            a_destination,
+	std::uint32_t              a_width,
+	std::uint32_t              a_height,
+	UpliftEncoding             a_encoding,
+	float                      a_diffuseWhiteNits)
+{
+	if (!EnsureResources(a_device, a_width, a_height) || !upliftResult) {
+		return false;
+	}
+	// The destination is the caller's own target, so it needs an RTV of its own
+	// rather than one of ours; reuse the encoded slot, which is free by now.
+	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	auto       rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+	rtv.ptr += static_cast<SIZE_T>(kRTVUpliftEncoded) * rtvIncrement;
+	a_device->CreateRenderTargetView(a_destination, nullptr, rtv);
+
+	const bool ok = RunUpliftCodec(a_device, a_commandList, upliftResult.get(), a_destination,
+		kRTVUpliftEncoded, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits);
+
+	// Put the slot back so the next frame's encode writes upliftEncoded again.
+	a_device->CreateRenderTargetView(upliftEncoded.get(), nullptr, rtv);
+	return ok;
 }
 
 bool D3D12NeuralGBuffer::GenerateUpliftGuides(

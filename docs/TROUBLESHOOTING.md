@@ -59,6 +59,19 @@ A diagnostic that fills the target with a plausible-looking image proves
 nothing. An earlier version used the pre-upscale scene, which at Native AA looks
 the same as the upscaled one, and it made a broken path look fine.
 
+## The uplift runs but barely changes anything
+
+The model expects colour in a defined encoding with a known diffuse-white
+reference. Skyrim's scene colour is unbounded linear HDR with neither, so it is
+normalised before the uplift and restored afterwards. If the effect still looks
+faint, sweep **NR Colour Encoding** — sRGB, linear BT.709 and BT.2100 PQ each
+present the scene to the model differently — and adjust **NR Diffuse White** to
+match how bright your ENB preset actually renders.
+
+Two inputs the reference implementation supplies are still missing here: the
+explicit `DLSSNR.JitterOffset` parameters (jitter is currently folded into where
+the guides are sampled instead) and the UI correction buffers.
+
 ## Known limitations
 
 - **Changing resolution mid-session.** The shared textures are allocated once at

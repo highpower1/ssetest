@@ -70,6 +70,13 @@ public:
 		// out, so after is the default. After needs display-resolution guides, so
 		// it only applies when the render and display sizes match.
 		uint32_t dlssNRAfterUpscale = 1;
+		// Colour space the uplift is handed. 0 = linear BT.709 (raw scene),
+		// 1 = sRGB, 2 = BT.2100 PQ. The model was trained on a defined encoding
+		// with a known diffuse-white level; Skyrim's scene colour is unbounded
+		// linear HDR with neither, so it is normalised on the way in.
+		uint32_t dlssNREncoding = 1;
+		// Scene value that means diffuse white. 0 uses the per-encoding default.
+		float    dlssNRDiffuseWhiteNits = 0.0f;
 		float    dlssNRIntensity = 1.0f;
 		float    dlssNRLocalToneStrength = 1.0f;
 		float    dlssNRLocalStructureStrength = 1.0f;

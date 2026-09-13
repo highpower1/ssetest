@@ -317,6 +317,16 @@ namespace
 				settings.dlssNRUseAutoMask,
 				"Lets the model pick which regions to uplift. Keep this on: no explicit uplift mask is "
 				"supplied, so with it off there may be nothing marked to uplift at all.");
+			static constexpr std::array nrEncodings{ "Linear BT.709", "sRGB", "BT.2100 PQ" };
+			changed |= ComboSetting(
+				"NR Colour Encoding", settings.dlssNREncoding, nrEncodings,
+				"The colour space the uplift is handed. Skyrim's scene is unbounded linear HDR, which the "
+				"model has no reference for, so it is normalised first. sRGB is the safe default; try the "
+				"others if the effect looks weak or the image shifts.");
+			changed |= SliderFloatSetting(
+				"NR Diffuse White", settings.dlssNRDiffuseWhiteNits, 0.0f, 400.0f, "%.0f nits",
+				"Scene brightness treated as white. 0 uses the encoding's default: 100 nits for linear "
+				"BT.709 and sRGB, 250 for BT.2100 PQ.");
 			changed |= SliderIntSetting(
 				"NR Style", settings.dlssNRStyle, 0, 4, "%d",
 				"Selects the model's look. Undocumented; sweep it if the uplift seems to do nothing.");

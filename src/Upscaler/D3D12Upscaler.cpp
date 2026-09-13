@@ -418,6 +418,8 @@ void D3D12Upscaler::UpdateFromSettings()
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
+	neuralEncoding = std::min(s.dlssNREncoding, 2u);
+	neuralDiffuseWhiteNits = s.dlssNRDiffuseWhiteNits;
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
 	// scene) -- upscaling those warps the image, so treat the upscaler as inactive.
 	blocked = Upscaling::GetSingleton()->ShouldBlockUpscaling();
@@ -911,17 +913,38 @@ void D3D12Upscaler::Evaluate()
 			const auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
 			commandList->ResourceBarrier(1, &uavBarrier);
 
-			nrParameters.color = colorOutput->resource12.get();
-			nrParameters.output = neuralColor.get();
 			if (neuralDebugBypass) {
 				FillNeuralColorForDebug();
-			} else if (sl->EvaluateDLSSNR(commandList.get(), nrParameters)) {
-				// Present and DLSS-G read this instead of the upscaler's output.
-				neuralColorReady = neuralColor.get();
-				neuralRenderingActive = true;
-				ReportNeuralRecovered();
 			} else {
-				ReportNeuralFailure();
+				// The model expects a defined colour encoding with a known
+				// diffuse-white level. Skyrim's scene colour is unbounded linear
+				// HDR with neither, so normalise into that space, uplift, and undo
+				// it -- handing over the raw values leaves the model almost nothing
+				// it recognises, which is why the effect looked so slight.
+				auto*      guides = D3D12NeuralGBuffer::GetSingleton();
+				const auto encoding = static_cast<D3D12NeuralGBuffer::UpliftEncoding>(neuralEncoding);
+				const float whiteNits = neuralDiffuseWhiteNits > 0.0f ?
+				                            neuralDiffuseWhiteNits :
+				                            D3D12NeuralGBuffer::DefaultDiffuseWhiteNits(encoding);
+
+				const bool encoded = guides->EncodeForUplift(
+					d3d12Device.get(), commandList.get(), colorOutput->resource12.get(),
+					displayWidth, displayHeight, encoding, whiteNits);
+
+				nrParameters.color = encoded ? guides->GetUpliftEncoded() : colorOutput->resource12.get();
+				nrParameters.output = encoded ? guides->GetUpliftResult() : neuralColor.get();
+
+				if (sl->EvaluateDLSSNR(commandList.get(), nrParameters) &&
+					(!encoded || guides->DecodeFromUplift(
+						d3d12Device.get(), commandList.get(), neuralColor.get(),
+						displayWidth, displayHeight, encoding, whiteNits))) {
+					// Present and DLSS-G read this instead of the upscaler's output.
+					neuralColorReady = neuralColor.get();
+					neuralRenderingActive = true;
+					ReportNeuralRecovered();
+				} else {
+					ReportNeuralFailure();
+				}
 			}
 		}
 

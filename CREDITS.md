@@ -8,6 +8,16 @@
   backend all originate there. Its `test/dlss-nr` branch reconstructed the
   DLSS-NR ABI that NVIDIA has not published.
 
+## Thanks
+
+- **[RenoDX](https://discord.com/invite/renodx)** — for the DLSS runtime DLLs
+  that made DLSS 5 Neural Rendering possible here at all, and for the community
+  work that got the feature running on hardware NVIDIA had not enabled it for.
+  Their ReShade addon was also the reference that revealed what this
+  implementation was still missing: the explicit jitter parameters, the UI
+  correction buffers, and the colour encoding and diffuse-white reference the
+  uplift model expects.
+
 ## Bundled third-party source
 
 - **[RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock)** by Michael

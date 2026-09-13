@@ -90,6 +90,52 @@ public:
 	[[nodiscard]] ID3D12Resource* GetNormalRoughness() const { return normalRoughness.get(); }
 	[[nodiscard]] ID3D12Resource* GetAlbedo() const { return albedo.get(); }
 	[[nodiscard]] ID3D12Resource* GetSpecularAlbedo() const { return specularAlbedo.get(); }
+	// The uplift expects colour in a defined encoding with a known diffuse-white
+	// reference. Skyrim's scene colour is unbounded linear HDR with neither, so
+	// it is encoded on the way in and decoded on the way out; feeding the raw
+	// values leaves the model almost nothing it recognises to work with.
+	enum class UpliftEncoding : std::uint32_t
+	{
+		kLinearBT709 = 0,  // pass through, only the diffuse-white scale applies
+		kSRGB = 1,         // srgb_nonlinear
+		kPQ = 2,           // hdr10_st2084 / BT.2100 PQ
+	};
+
+	// colour -> encoded. Result is GetUpliftEncoded().
+	bool EncodeForUplift(
+		ID3D12Device*              a_device,
+		ID3D12GraphicsCommandList* a_commandList,
+		ID3D12Resource*            a_sceneColor,
+		std::uint32_t              a_width,
+		std::uint32_t              a_height,
+		UpliftEncoding             a_encoding,
+		float                      a_diffuseWhiteNits);
+
+	// encoded -> colour, written into a_destination.
+	bool DecodeFromUplift(
+		ID3D12Device*              a_device,
+		ID3D12GraphicsCommandList* a_commandList,
+		ID3D12Resource*            a_destination,
+		std::uint32_t              a_width,
+		std::uint32_t              a_height,
+		UpliftEncoding             a_encoding,
+		float                      a_diffuseWhiteNits);
+
+	// Diffuse-white defaults matching the reference implementation.
+	[[nodiscard]] static float DefaultDiffuseWhiteNits(UpliftEncoding a_encoding)
+	{
+		switch (a_encoding) {
+		case UpliftEncoding::kPQ:
+			return 250.0f;
+		case UpliftEncoding::kSRGB:
+		case UpliftEncoding::kLinearBT709:
+		default:
+			return 100.0f;
+		}
+	}
+
+	[[nodiscard]] ID3D12Resource* GetUpliftEncoded() const { return upliftEncoded.get(); }
+	[[nodiscard]] ID3D12Resource* GetUpliftResult() const { return upliftResult.get(); }
 	[[nodiscard]] ID3D12Resource* GetUpliftMotionVectors() const { return upliftMotion.get(); }
 	[[nodiscard]] ID3D12Resource* GetUpliftDepth() const { return upliftDepth.get(); }
 
@@ -102,18 +148,35 @@ public:
 	static constexpr float kSpecularAlbedo = 0.0f;  // black => no specular lobe
 
 private:
+	// Shared body of EncodeForUplift / DecodeFromUplift.
+	bool RunUpliftCodec(
+		ID3D12Device*              a_device,
+		ID3D12GraphicsCommandList* a_commandList,
+		ID3D12Resource*            a_source,
+		ID3D12Resource*            a_destination,
+		std::uint32_t              a_destinationRTV,
+		std::uint32_t              a_sourceSRV,
+		std::uint32_t              a_width,
+		std::uint32_t              a_height,
+		bool                       a_decode,
+		UpliftEncoding             a_encoding,
+		float                      a_diffuseWhiteNits);
+
 	bool EnsureResources(ID3D12Device* a_device, std::uint32_t a_width, std::uint32_t a_height);
 
 	winrt::com_ptr<ID3D12Device>         device;
 	winrt::com_ptr<ID3D12RootSignature>  rootSignature;
 	winrt::com_ptr<ID3D12PipelineState>  pipelineState;        // normals + roughness
 	winrt::com_ptr<ID3D12PipelineState>  upliftGuidePipeline;  // resampled motion + depth
+	winrt::com_ptr<ID3D12PipelineState>  upliftCodecPipeline;  // colour encode / decode
 	winrt::com_ptr<ID3D12DescriptorHeap> srvHeap;
 	winrt::com_ptr<ID3D12DescriptorHeap> rtvHeap;
 
 	winrt::com_ptr<ID3D12Resource> normalRoughness;
 	winrt::com_ptr<ID3D12Resource> albedo;
 	winrt::com_ptr<ID3D12Resource> specularAlbedo;
+	winrt::com_ptr<ID3D12Resource> upliftEncoded;
+	winrt::com_ptr<ID3D12Resource> upliftResult;
 	winrt::com_ptr<ID3D12Resource> upliftMotion;
 	winrt::com_ptr<ID3D12Resource> upliftDepth;
 

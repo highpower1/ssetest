@@ -58,6 +58,8 @@ void SettingsStore::Load()
 	GetUInt(ini, "DLSSNRDebugBypass", settings.dlssNRDebugBypass);
 	GetUInt(ini, "DLSSNRPassCount", settings.dlssNRPassCount);
 	GetUInt(ini, "DLSSNRAfterUpscale", settings.dlssNRAfterUpscale);
+	GetUInt(ini, "DLSSNREncoding", settings.dlssNREncoding);
+	settings.dlssNRDiffuseWhiteNits = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRDiffuseWhiteNits", settings.dlssNRDiffuseWhiteNits));
 	settings.dlssNRIntensity = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRIntensity", settings.dlssNRIntensity));
 	settings.dlssNRLocalToneStrength = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRLocalToneStrength", settings.dlssNRLocalToneStrength));
 	settings.dlssNRLocalStructureStrength = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRLocalStructureStrength", settings.dlssNRLocalStructureStrength));
@@ -103,6 +105,8 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "DLSSNRDebugBypass", static_cast<long>(a_settings.dlssNRDebugBypass));
 	ini.SetLongValue(kSection, "DLSSNRPassCount", static_cast<long>(a_settings.dlssNRPassCount));
 	ini.SetLongValue(kSection, "DLSSNRAfterUpscale", static_cast<long>(a_settings.dlssNRAfterUpscale));
+	ini.SetLongValue(kSection, "DLSSNREncoding", static_cast<long>(a_settings.dlssNREncoding));
+	ini.SetDoubleValue(kSection, "DLSSNRDiffuseWhiteNits", a_settings.dlssNRDiffuseWhiteNits);
 	ini.SetDoubleValue(kSection, "DLSSNRIntensity", a_settings.dlssNRIntensity);
 	ini.SetDoubleValue(kSection, "DLSSNRLocalToneStrength", a_settings.dlssNRLocalToneStrength);
 	ini.SetDoubleValue(kSection, "DLSSNRLocalStructureStrength", a_settings.dlssNRLocalStructureStrength);
