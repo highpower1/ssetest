@@ -46,6 +46,8 @@ target("SkyrimUpscaler")
     add_files(
         "src/main.cpp",
         "src/Diagnostics/Probe.cpp",
+        -- finds which render target ENB consumes, by painting one magenta
+        "src/Diagnostics/SceneTargetProbe.cpp",
         "src/Game/Renderer.cpp",
         "src/Game/Util.cpp",
         -- Device capture plus the IDXGIFactory::CreateSwapChain hook that

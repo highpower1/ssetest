@@ -4,6 +4,7 @@
 
 #include "Game/Util.h"
 #include "Game/Renderer.h"
+#include "Diagnostics/SceneTargetProbe.h"
 #include "Neural/NeuralRendering.h"
 #include "Render/DX12SwapChain.h"
 #include "Render/Streamline.h"
@@ -167,6 +168,10 @@ namespace
 			// Neural rendering (B): external RenoDX-style modules get the scene
 			// colour BEFORE upscaling, while it is still hud-less and at render
 			// resolution -- so a module's output is what DLSS/FSR then resolves.
+			// Diagnostic only, off unless SceneTargetProbe is set: paint one
+			// candidate render target magenta so ENB's output says whether it
+			// reads that one.
+			SceneTargetProbe::Tick();
 			NeuralRendering::GetSingleton()->OnFrame();
 			// Approach 1 eval: process the main color through the D3D12 interop
 			// (increment 2a = identity round-trip to validate sync).

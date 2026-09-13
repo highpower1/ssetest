@@ -68,6 +68,12 @@ public:
 		// views hide the UI, so without a key they cannot be turned off from
 		// inside the game. 0x44 = F10; 0 disables the key.
 		uint32_t uiCompositeDebugKey = 0x44;
+		// Finds which render target ENB actually reads, by filling one at a time
+		// with magenta and watching ENB's own output for it. 0 off, 1 sweep,
+		// 2+ pin to candidate (value - 2). See Diagnostics/SceneTargetProbe.
+		uint32_t sceneTargetProbe = 0;
+		uint32_t sceneTargetProbeFrames = 180;
+		uint32_t sceneTargetProbeMarkKey = 0x57;  // F11
 		// 2 = the UI-difference mask: the presented buffer is captured again
 		// before the UI is drawn, and only pixels that changed count as UI, so
 		// ENB's output cancels instead of being composited over the scene.

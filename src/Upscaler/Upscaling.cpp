@@ -2,6 +2,7 @@
 
 #include "Upscaler/Upscaling.h"
 
+#include "Diagnostics/SceneTargetProbe.h"
 #include "Settings/Settings.h"
 #include "Hooks/UpscalerHooks.h"
 #include "Upscaler/D3D12Upscaler.h"
@@ -49,6 +50,10 @@ RE::BSEventNotifyControl Upscaling::ProcessEvent(RE::InputEvent* const* a_event,
 	for (auto* event = *a_event; event; event = event->next) {
 		const auto* button = event->AsButtonEvent();
 		if (!button || !button->IsDown() || event->GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
+			continue;
+		}
+		if (button->GetIDCode() == settings.sceneTargetProbeMarkKey && settings.sceneTargetProbe != 0) {
+			SceneTargetProbe::Mark();
 			continue;
 		}
 		if (button->GetIDCode() != wanted) {
