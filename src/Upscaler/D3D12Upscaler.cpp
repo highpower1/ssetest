@@ -608,11 +608,17 @@ void D3D12Upscaler::Evaluate()
 
 	auto* sl = Streamline::GetSingleton();
 
+	// Names the last D3D call attempted, so a thrown HRESULT says WHERE. A lost
+	// device reports only a reason code, and DRED covers GPU-side faults; an
+	// invalid CPU-side call leaves no breadcrumb at all.
+	const char* stage = "entry";
+
 	try {
 		// The previous Present may still be copying motion/depth/color from these
 		// shared resources on its own D3D12 queue. Queue a D3D11-side wait before
 		// overwriting them for this frame.
 		if (const auto consumedValue = presentInputsConsumedValue.exchange(0, std::memory_order_acq_rel); consumedValue != 0) {
+			stage = "d3d11 wait present-consumption fence";
 			DX::ThrowIfFailed(d3d11Context4->Wait(d3d11PresentConsumptionFence.get(), consumedValue));
 		}
 		// --- D3D11: copy upscaler inputs into shared textures, signal the fence ---
@@ -620,6 +626,7 @@ void D3D12Upscaler::Evaluate()
 		d3d11Context4->CopyResource(motionVectors->resource11.get(), kMv);
 		d3d11Context4->CopyResource(depth->resource11.get(), kDepth);
 		const auto inputsReadyValue = syncValue.fetch_add(1, std::memory_order_acq_rel) + 1;
+		stage = "d3d11 signal inputs-ready";
 		DX::ThrowIfFailed(d3d11Context4->Signal(d3d11Fence.get(), inputsReadyValue));
 
 		const auto* frame = Util::CameraFrame::GetSingleton();
@@ -638,11 +645,13 @@ void D3D12Upscaler::Evaluate()
 		}
 
 		// --- D3D12: wait for D3D11 copies, run the upscaler, signal ---
+		stage = "queue wait inputs-ready";
 		DX::ThrowIfFailed(commandQueue->Wait(sharedFence.get(), inputsReadyValue));
 		// A D3D12 command allocator cannot be reset until every submitted command
 		// list that used it has completed on the GPU. The D3D11-side Wait below is
 		// only a queued GPU dependency; it does not block this CPU thread.
 		if (fenceValue != 0 && fence->GetCompletedValue() < fenceValue) {
+			stage = "wait previous command fence";
 			DX::ThrowIfFailed(fence->SetEventOnCompletion(fenceValue, fenceEvent.get()));
 			constexpr DWORD kGpuWaitTimeoutMs = 5000;
 			const auto waitResult = WaitForSingleObjectEx(fenceEvent.get(), kGpuWaitTimeoutMs, FALSE);
@@ -656,7 +665,9 @@ void D3D12Upscaler::Evaluate()
 				return;
 			}
 		}
+		stage = "reset command allocator";
 		DX::ThrowIfFailed(commandAllocator->Reset());
+		stage = "reset command list";
 		DX::ThrowIfFailed(commandList->Reset(commandAllocator.get(), nullptr));
 
 		const float2 renderSize{ static_cast<float>(GetRenderWidth()), static_cast<float>(GetRenderHeight()) };
@@ -749,11 +760,14 @@ void D3D12Upscaler::Evaluate()
 			// start a fresh list.
 			if (sl->NeedsDLSSNRPreparation(nrParameters)) {
 				const bool prepared = sl->PrepareDLSSNR(commandList.get(), nrParameters);
+				stage = "close list (NR feature creation)";
 				DX::ThrowIfFailed(commandList->Close());
 				ID3D12CommandList* prepareLists[] = { commandList.get() };
 				commandQueue->ExecuteCommandLists(1, prepareLists);
+				stage = "signal fence (NR feature creation)";
 				DX::ThrowIfFailed(commandQueue->Signal(fence.get(), ++fenceValue));
 				if (fence->GetCompletedValue() < fenceValue) {
+					stage = "wait fence (NR feature creation)";
 					DX::ThrowIfFailed(fence->SetEventOnCompletion(fenceValue, fenceEvent.get()));
 					if (WaitForSingleObjectEx(fenceEvent.get(), 5000, FALSE) != WAIT_OBJECT_0) {
 						logger::critical("[DLSS-NR] Feature creation did not complete; disabling the upscaler");
@@ -761,7 +775,9 @@ void D3D12Upscaler::Evaluate()
 						return;
 					}
 				}
+				stage = "reset allocator (NR feature creation)";
 				DX::ThrowIfFailed(commandAllocator->Reset());
+				stage = "reset list (NR feature creation)";
 				DX::ThrowIfFailed(commandList->Reset(commandAllocator.get(), nullptr));
 				// Creation changes the working set: let one plain frame through
 				// before evaluating the new feature.
@@ -950,11 +966,14 @@ void D3D12Upscaler::Evaluate()
 			}
 		}
 
+		stage = "close list (frame work)";
 		DX::ThrowIfFailed(commandList->Close());
 		ID3D12CommandList* lists[] = { commandList.get() };
 		commandQueue->ExecuteCommandLists(1, lists);
+		stage = "signal fence (frame work)";
 		DX::ThrowIfFailed(commandQueue->Signal(fence.get(), ++fenceValue));
 		const auto workReadyValue = syncValue.fetch_add(1, std::memory_order_acq_rel) + 1;
+		stage = "signal shared fence (frame work)";
 		DX::ThrowIfFailed(commandQueue->Signal(sharedFence.get(), workReadyValue));
 		workFenceValue.store(workReadyValue, std::memory_order_release);  // proxy present waits on this before reading mvec/depth
 		if (ok && method == 2 && frameToken) {
@@ -962,6 +981,7 @@ void D3D12Upscaler::Evaluate()
 		}
 
 		// --- D3D11: wait for D3D12, copy the result back into main color ---
+		stage = "d3d11 wait work fence";
 		DX::ThrowIfFailed(d3d11Context4->Wait(d3d11Fence.get(), workReadyValue));
 		if (ok) {
 			if constexpr (Upscaling::kFrameGenExperiment) {
@@ -1037,7 +1057,8 @@ void D3D12Upscaler::Evaluate()
 	} catch (const std::exception& e) {
 		const auto removedReason = d3d12Device ? d3d12Device->GetDeviceRemovedReason() : S_OK;
 		logger::critical(
-			"[D3D12Upscaler] Evaluate failed; disabling D3D12 upscaling and requesting DLSS-G shutdown: {} removed=0x{:08X}",
+			"[D3D12Upscaler] Evaluate failed at '{}'; disabling D3D12 upscaling and requesting DLSS-G shutdown: {} removed=0x{:08X}",
+			stage,
 			e.what(),
 			static_cast<uint32_t>(removedReason));
 		// Names the GPU operation that did not complete, which the HRESULT alone
