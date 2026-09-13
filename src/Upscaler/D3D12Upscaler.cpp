@@ -487,12 +487,11 @@ void D3D12Upscaler::UpdateFromSettings()
 	dlssPreset = s.dlssModelPreset;
 	sharpness = s.sharpness;
 	transparencyHint = s.transparencyHint != 0;
-	presentOverride = s.presentOverride != 0;
-	// This combination renders correctly and then throws the result away: ENB's
-	// chain overwrites kMAIN after we copy into it. Proven with the debug bypass
-	// -- a flat magenta fill did not reach the screen. Say so rather than let it
-	// read as "the upscaler does nothing".
-	if (!presentOverride && enbLoaded) {
+	// At the scene-complete hook the whole point is to hand the result back to
+	// the game's own chain, so the present override is meaningless there and the
+	// copy-back is no longer a dead path: kMAIN has not been read yet.
+	presentOverride = s.presentOverride != 0 && s.upscalerHookPoint == 0;
+	if (!presentOverride && enbLoaded && s.upscalerHookPoint == 0) {
 		static bool loggedDeadPath = false;
 		if (!loggedDeadPath) {
 			loggedDeadPath = true;

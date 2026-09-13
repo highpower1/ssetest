@@ -59,6 +59,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "PresentOverride", settings.presentOverride);
 	GetUInt(ini, "UICompositeDebug", settings.uiCompositeDebug);
 	GetUInt(ini, "UICompositeDebugKey", settings.uiCompositeDebugKey);
+	GetUInt(ini, "UpscalerHookPoint", settings.upscalerHookPoint);
 	GetUInt(ini, "ENBGradeTransfer", settings.enbGradeTransfer);
 	GetFloat(ini, "ENBGradeStrength", settings.enbGradeStrength);
 	GetFloat(ini, "ENBGradeRadius", settings.enbGradeRadius);
@@ -127,6 +128,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "PresentOverride", static_cast<long>(a_settings.presentOverride));
 	ini.SetLongValue(kSection, "UICompositeDebug", static_cast<long>(a_settings.uiCompositeDebug));
 	ini.SetLongValue(kSection, "UICompositeDebugKey", static_cast<long>(a_settings.uiCompositeDebugKey));
+	ini.SetLongValue(kSection, "UpscalerHookPoint", static_cast<long>(a_settings.upscalerHookPoint));
 	ini.SetLongValue(kSection, "ENBGradeTransfer", static_cast<long>(a_settings.enbGradeTransfer));
 	ini.SetDoubleValue(kSection, "ENBGradeStrength", a_settings.enbGradeStrength);
 	ini.SetDoubleValue(kSection, "ENBGradeRadius", a_settings.enbGradeRadius);

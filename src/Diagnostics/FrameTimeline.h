@@ -30,4 +30,12 @@ namespace FrameTimeline
 
 	// Called once per frame from the pre-UI hook so the capture has a frame edge.
 	void OnFrameBoundary();
+
+	// Invoked at the first render-target bind of the frame that belongs to the
+	// post-processing chain -- the moment the scene is finished in kMAIN and
+	// nothing has consumed it yet. This is the point the upscaler has to run at
+	// for ENB to grade its output rather than the game's. Registered by the
+	// render hooks; the callback runs on the render thread, inside
+	// OMSetRenderTargets and before the original call.
+	void SetSceneCompleteCallback(void (*a_callback)());
 }

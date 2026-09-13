@@ -16,6 +16,21 @@ namespace
 	constexpr uint32_t kOMSetRenderTargetsVTableIndex = 33;
 	constexpr uint32_t kMaxEntries = 600;
 
+	// The first pass of the frame that reads the finished scene out of kMAIN.
+	// Several are listed because a configuration that disables one still has to
+	// trigger: whichever comes first wins, and the frame is only triggered once.
+	constexpr std::array kPostChainStart{
+		RE::RENDER_TARGET::kIBLENSFLARES_LIGHTS_FILTER,
+		RE::RENDER_TARGET::kIBLENSFLARES_DOWNSAMPLE_16X_4Y_PING,
+		RE::RENDER_TARGET::kHDR_DOWNSAMPLE0,
+		RE::RENDER_TARGET::kIMAGESPACE_TEMP_COPY,
+	};
+
+	void (*g_sceneComplete)() = nullptr;
+	std::array<const void*, kPostChainStart.size()> g_postChainRTVs{};
+	bool g_sceneCompleteFiredThisFrame = false;
+	bool g_inSceneCompleteCallback = false;
+
 	std::atomic<bool>     g_armed{ false };
 	std::atomic<bool>     g_pending{ false };
 	std::atomic<uint32_t> g_entries{ 0 };
@@ -48,6 +63,26 @@ namespace
 		logger::info("[FrameTimeline] Resolved {} render-target views by name", g_rtvNames.size());
 	}
 
+	void BuildPostChainViews()
+	{
+		for (size_t i = 0; i < kPostChainStart.size(); ++i) {
+			g_postChainRTVs[i] = Game::GetRenderTargetRTV(kPostChainStart[i]);
+		}
+	}
+
+	bool IsPostChainStart(const void* a_rtv)
+	{
+		if (!a_rtv) {
+			return false;
+		}
+		for (const auto* view : g_postChainRTVs) {
+			if (view == a_rtv) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	const char* NameFor(const void* a_rtv)
 	{
 		if (!a_rtv) {
@@ -65,12 +100,25 @@ namespace
 			ID3D11RenderTargetView* const* ppRenderTargetViews,
 			ID3D11DepthStencilView*        pDepthStencilView)
 		{
+			const void* firstView = (NumViews > 0 && ppRenderTargetViews) ? ppRenderTargetViews[0] : nullptr;
+
+			// Run the upscaler here rather than at the pre-UI hook, where the whole
+			// post chain and ENB have already finished with the scene. The guard is
+			// not optional: the callback issues D3D11 work on this very context, so
+			// without it the first bind it makes would re-enter this function.
+			if (g_sceneComplete && !g_sceneCompleteFiredThisFrame && !g_inSceneCompleteCallback &&
+				IsPostChainStart(firstView)) {
+				g_sceneCompleteFiredThisFrame = true;
+				g_inSceneCompleteCallback = true;
+				g_sceneComplete();
+				g_inSceneCompleteCallback = false;
+			}
+
 			g_bindsThisFrame.fetch_add(1, std::memory_order_relaxed);
 			if (g_armed.load(std::memory_order_relaxed)) {
 				const auto n = g_entries.fetch_add(1, std::memory_order_relaxed);
 				if (n < kMaxEntries) {
-					const void* first = (NumViews > 0 && ppRenderTargetViews) ? ppRenderTargetViews[0] : nullptr;
-					logger::info("[FrameTimeline] {:3}  OMSetRenderTargets n={} -> {}", n, NumViews, NameFor(first));
+					logger::info("[FrameTimeline] {:3}  OMSetRenderTargets n={} -> {}", n, NumViews, NameFor(firstView));
 				} else if (n == kMaxEntries) {
 					logger::info("[FrameTimeline] ... entry cap reached, stopping this capture");
 					g_armed.store(false, std::memory_order_relaxed);
@@ -175,8 +223,22 @@ namespace FrameTimeline
 		logger::info("[FrameTimeline] {:3}  >>> {} <<<", n, a_label);
 	}
 
+	void SetSceneCompleteCallback(void (*a_callback)())
+	{
+		BuildNames();
+		BuildPostChainViews();
+		g_sceneComplete = a_callback;
+		uint32_t resolved = 0;
+		for (const auto* view : g_postChainRTVs) {
+			resolved += view != nullptr ? 1u : 0u;
+		}
+		logger::info("[FrameTimeline] Scene-complete callback {} ({} of {} post-chain views resolved)",
+			a_callback ? "registered" : "cleared", resolved, kPostChainStart.size());
+	}
+
 	void OnFrameBoundary()
 	{
+		g_sceneCompleteFiredThisFrame = false;
 		g_lastFrameBinds.store(g_bindsThisFrame.exchange(0, std::memory_order_relaxed),
 			std::memory_order_relaxed);
 

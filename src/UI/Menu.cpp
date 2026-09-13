@@ -215,6 +215,17 @@ namespace
 			"UI Mask Softness", settings.uiMaskSoftness, 0.0f, 1.0f, "%.3f",
 			"Width of the ramp above the threshold. 0 is a hard edge.");
 		ImGuiMCP::EndDisabled();
+		static constexpr std::array hookPoints{ "Pre-UI (after ENB)", "Scene complete (before ENB)" };
+		changed |= ComboSetting(
+			"Upscaler Hook Point", settings.upscalerHookPoint, hookPoints,
+			"Where in the frame the upscaler runs. A capture of one frame's render-target binds showed the "
+			"game's whole post-processing chain -- bloom, lens flares, imagespace, ENB -- finishing before "
+			"the pre-UI hook, which is why the upscaled scene reaches the screen ungraded. Scene complete "
+			"runs at the first post-processing bind instead, while the finished scene is still sitting in "
+			"kMAIN and nothing has read it, so ENB grades our image rather than the game's. It forces the "
+			"copy-back output path and turns frame generation off, since neither the present override nor "
+			"DLSS-G's UI recovery applies once the game presents its own frame. Restart after changing "
+			"this.");
 		changed |= CheckboxSetting(
 			"ENB Grade Transfer",
 			settings.enbGradeTransfer,

@@ -7,6 +7,7 @@
 #include "Diagnostics/FrameTimeline.h"
 #include "Diagnostics/SceneTargetProbe.h"
 #include "Neural/NeuralRendering.h"
+#include "Settings/Settings.h"
 #include "Render/DX12SwapChain.h"
 #include "Render/Streamline.h"
 #include "Upscaler/D3D12Upscaler.h"
@@ -71,6 +72,14 @@ namespace
 			// Log-only interception of the game's render-target binds; nothing is
 			// captured until a key arms it.
 			FrameTimeline::Install();
+			// Plan A: with the render-target timeline in hand, the upscaler can run
+			// where the scene is finished and nothing has read it yet, instead of
+			// after ENB has already produced the frame.
+			FrameTimeline::SetSceneCompleteCallback([] {
+				if (SettingsStore::GetSingleton()->settings.upscalerHookPoint == 1) {
+					D3D12Upscaler::GetSingleton()->Evaluate();
+				}
+			});
 		}
 		static inline REL::Relocation<decltype(thunk)> func;
 	};
@@ -179,8 +188,11 @@ namespace
 			SceneTargetProbe::Tick();
 			NeuralRendering::GetSingleton()->OnFrame();
 			// Approach 1 eval: process the main color through the D3D12 interop
-			// (increment 2a = identity round-trip to validate sync).
-			D3D12Upscaler::GetSingleton()->Evaluate();
+			// (increment 2a = identity round-trip to validate sync). Skipped when
+			// the scene-complete hook owns the evaluation instead.
+			if (SettingsStore::GetSingleton()->settings.upscalerHookPoint == 0) {
+				D3D12Upscaler::GetSingleton()->Evaluate();
+			}
 			func(a_renderer, a_unk);
 			// Everything the world and ENB draw has landed in the presented buffer
 			// by here; the UI has not. Snapshot it so the composite can subtract
