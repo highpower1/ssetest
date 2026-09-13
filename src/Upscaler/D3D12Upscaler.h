@@ -169,6 +169,8 @@ private:
 	bool     neuralRenderingSkipFrame = false;
 	bool     neuralAfterUpscale = true;        // uplift the resolved image, not the raw scene
 	bool     neuralDebugBypass = false;
+	bool     neuralDebugDifference = false;
+	float    neuralDebugDifferenceGain = 10.0f;
 	uint32_t neuralEncoding = 1;
 	float    neuralDiffuseWhiteNits = 0.0f;
 	bool     loggedNeuralDebugBypass = false;

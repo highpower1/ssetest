@@ -52,7 +52,8 @@ namespace
 	constexpr std::uint32_t kSRVUpliftDepth = 3;
 	constexpr std::uint32_t kSRVUpliftEncodeSrc = 4;
 	constexpr std::uint32_t kSRVUpliftDecodeSrc = 6;
-	constexpr std::uint32_t kSRVCount = 8;
+	constexpr std::uint32_t kSRVUpliftDiffSrc = 8;  // t0 = before, t1 = after
+	constexpr std::uint32_t kSRVCount = 10;
 
 	// Descriptor slots in rtvHeap.
 	constexpr std::uint32_t kRTVNormalRoughness = 0;
@@ -226,6 +227,46 @@ float4 PSMain(PSInput input) : SV_TARGET
 }
 )";
 
+
+	// Amplified before/after difference, for judging whether the uplift is doing
+	// anything at all rather than squinting at the composited frame.
+	const char* const kUpliftDiffSource = R"(
+Texture2D<float4> Before : register(t0);
+Texture2D<float4> After  : register(t1);
+
+cbuffer Params : register(b0)
+{
+	float4 Diff;  // x = amplification
+};
+
+struct PSInput
+{
+	float4 position : SV_POSITION;
+};
+
+PSInput VSMain(uint vertexId : SV_VertexID)
+{
+	static const float2 positions[3] = {
+		float2(-1.0f,  3.0f),
+		float2(-1.0f, -1.0f),
+		float2( 3.0f, -1.0f)
+	};
+	PSInput output;
+	output.position = float4(positions[vertexId], 0.0f, 1.0f);
+	return output;
+}
+
+float4 PSMain(PSInput input) : SV_TARGET
+{
+	const int3 px = int3(int2(input.position.xy), 0);
+	const float3 before = Before.Load(px).rgb;
+	const float3 after = After.Load(px).rgb;
+	// Signed difference would hide as much as it shows once amplified, so take
+	// the magnitude per channel: brightness is how much the model moved a pixel.
+	return float4(abs(after - before) * Diff.x, 1.0f);
+}
+)";
+
 	// Resample the engine's render-resolution, jitter-rasterised motion vectors
 	// and depth up to display resolution for the post-upscale uplift.
 	const char* const kUpliftGuideSource = R"(
@@ -287,6 +328,7 @@ void D3D12NeuralGBuffer::Reset()
 	rtvHeap = nullptr;
 	upliftGuidePipeline = nullptr;
 	upliftCodecPipeline = nullptr;
+	upliftDiffPipeline = nullptr;
 	normalRoughness = nullptr;
 	albedo = nullptr;
 	specularAlbedo = nullptr;
@@ -385,6 +427,13 @@ bool D3D12NeuralGBuffer::EnsureResources(ID3D12Device* a_device, std::uint32_t a
 		codecPsoDesc.NumRenderTargets = 1;
 		codecPsoDesc.RTVFormats[0] = DXGI_FORMAT_R16G16B16A16_FLOAT;
 		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&codecPsoDesc, IID_PPV_ARGS(upliftCodecPipeline.put())));
+
+		auto diffVertexShader = CompileShader(kUpliftDiffSource, "VSMain", "vs_5_0");
+		auto diffPixelShader = CompileShader(kUpliftDiffSource, "PSMain", "ps_5_0");
+		auto diffPsoDesc = codecPsoDesc;
+		diffPsoDesc.VS = { diffVertexShader->GetBufferPointer(), diffVertexShader->GetBufferSize() };
+		diffPsoDesc.PS = { diffPixelShader->GetBufferPointer(), diffPixelShader->GetBufferSize() };
+		ThrowIfFailed(a_device->CreateGraphicsPipelineState(&diffPsoDesc, IID_PPV_ARGS(upliftDiffPipeline.put())));
 
 		// ---- guide textures ---------------------------------------------------
 		const auto createTarget = [&](winrt::com_ptr<ID3D12Resource>& a_out, DXGI_FORMAT a_format, bool a_allowUav = false) {
@@ -701,6 +750,71 @@ bool D3D12NeuralGBuffer::DecodeFromUplift(
 
 	return RunUpliftCodec(a_device, a_commandList, upliftResult.get(), a_destination,
 		kRTVUpliftDecodeDst, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits);
+}
+
+bool D3D12NeuralGBuffer::RenderUpliftDifference(
+	ID3D12Device*              a_device,
+	ID3D12GraphicsCommandList* a_commandList,
+	ID3D12Resource*            a_destination,
+	std::uint32_t              a_width,
+	std::uint32_t              a_height,
+	float                      a_amplification)
+{
+	if (!a_device || !a_commandList || !a_destination || a_width == 0 || a_height == 0) {
+		return false;
+	}
+	if (!EnsureResources(a_device, a_width, a_height) || !upliftDiffPipeline || !upliftEncoded || !upliftResult) {
+		return false;
+	}
+
+	const float params[4]{ a_amplification, 0.0f, 0.0f, 0.0f };
+
+	Transition(a_commandList, upliftEncoded.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(a_commandList, upliftResult.get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	Transition(a_commandList, a_destination, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
+
+	const auto srvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Texture2D.MipLevels = 1;
+
+	auto srvCpu = srvHeap->GetCPUDescriptorHandleForHeapStart();
+	srvCpu.ptr += static_cast<SIZE_T>(kSRVUpliftDiffSrc) * srvIncrement;
+	a_device->CreateShaderResourceView(upliftEncoded.get(), &srvDesc, srvCpu);
+	srvCpu.ptr += srvIncrement;
+	a_device->CreateShaderResourceView(upliftResult.get(), &srvDesc, srvCpu);
+
+	// The destination is the caller's, so it needs its own view; the decode slot
+	// is free here because decoding and the difference view are exclusive.
+	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	auto       rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+	rtv.ptr += static_cast<SIZE_T>(kRTVUpliftDecodeDst) * rtvIncrement;
+	a_device->CreateRenderTargetView(a_destination, nullptr, rtv);
+	decodeDestination = a_destination;
+	a_commandList->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+
+	ID3D12DescriptorHeap* heaps[] = { srvHeap.get() };
+	a_commandList->SetDescriptorHeaps(static_cast<UINT>(std::size(heaps)), heaps);
+	a_commandList->SetGraphicsRootSignature(rootSignature.get());
+	a_commandList->SetPipelineState(upliftDiffPipeline.get());
+	auto srvTable = srvHeap->GetGPUDescriptorHandleForHeapStart();
+	srvTable.ptr += static_cast<UINT64>(kSRVUpliftDiffSrc) * srvIncrement;
+	a_commandList->SetGraphicsRootDescriptorTable(0, srvTable);
+	a_commandList->SetGraphicsRoot32BitConstants(1, 4, params, 0);
+	a_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	const D3D12_VIEWPORT viewport{ 0.0f, 0.0f, static_cast<float>(a_width), static_cast<float>(a_height), 0.0f, 1.0f };
+	const D3D12_RECT     scissor{ 0, 0, static_cast<LONG>(a_width), static_cast<LONG>(a_height) };
+	a_commandList->RSSetViewports(1, &viewport);
+	a_commandList->RSSetScissorRects(1, &scissor);
+	a_commandList->DrawInstanced(3, 1, 0, 0);
+
+	Transition(a_commandList, a_destination, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, upliftResult.get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+	Transition(a_commandList, upliftEncoded.get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+	return true;
 }
 
 bool D3D12NeuralGBuffer::GenerateUpliftGuides(

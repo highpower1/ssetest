@@ -348,6 +348,17 @@ namespace
 				}
 			}
 			changed |= CheckboxSetting(
+				"NR Debug: show difference",
+				settings.dlssNRDebugDifference,
+				"Diagnostic. Presents the amplified difference between what went into the uplift and what "
+				"came out. A near-black screen means the model changed nothing; visible structure means it "
+				"did, however subtle it looks in place. Turn this back off afterwards.");
+			ImGuiMCP::BeginDisabled(settings.dlssNRDebugDifference == 0);
+			changed |= SliderFloatSetting(
+				"NR Debug: difference gain", settings.dlssNRDebugDifferenceGain, 1.0f, 100.0f, "%.0fx",
+				"How far the difference is amplified before being shown.");
+			ImGuiMCP::EndDisabled();
+			changed |= CheckboxSetting(
 				"NR Debug: bypass uplift",
 				settings.dlssNRDebugBypass,
 				"Diagnostic. Skips the uplift and fills its target with flat magenta instead. "

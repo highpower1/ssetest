@@ -420,6 +420,8 @@ void D3D12Upscaler::UpdateFromSettings()
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
+	neuralDebugDifference = s.dlssNRDebugDifference != 0;
+	neuralDebugDifferenceGain = s.dlssNRDebugDifferenceGain;
 	neuralEncoding = std::min(s.dlssNREncoding, 2u);
 	neuralDiffuseWhiteNits = s.dlssNRDiffuseWhiteNits;
 	// Blocked while a menu / logo / loading screen is up (not the jittered 3D
@@ -959,10 +961,21 @@ void D3D12Upscaler::Evaluate()
 				nrParameters.color = encoded ? guides->GetUpliftEncoded() : colorOutput->resource12.get();
 				nrParameters.output = encoded ? guides->GetUpliftResult() : neuralColor.get();
 
-				if (sl->EvaluateDLSSNR(commandList.get(), nrParameters) &&
-					(!encoded || guides->DecodeFromUplift(
+				const auto finish = [&] {
+					if (!encoded) {
+						return true;  // the uplift wrote neuralColor directly
+					}
+					if (neuralDebugDifference) {
+						return guides->RenderUpliftDifference(
+							d3d12Device.get(), commandList.get(), neuralColor.get(),
+							displayWidth, displayHeight, neuralDebugDifferenceGain);
+					}
+					return guides->DecodeFromUplift(
 						d3d12Device.get(), commandList.get(), neuralColor.get(),
-						displayWidth, displayHeight, encoding, whiteNits))) {
+						displayWidth, displayHeight, encoding, whiteNits);
+				};
+
+				if (sl->EvaluateDLSSNR(commandList.get(), nrParameters) && finish()) {
 					// Present and DLSS-G read this instead of the upscaler's output.
 					neuralColorReady = neuralColor.get();
 					neuralRenderingActive = true;

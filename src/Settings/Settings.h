@@ -64,6 +64,10 @@ public:
 		// screen, which shows the pre-upscale input and so proves whether the
 		// target reaches present at all.
 		uint32_t dlssNRDebugBypass = 0;
+		// 1 = present the amplified before/after difference instead of the frame,
+		// so "is the uplift doing anything" stops being a judgement call.
+		uint32_t dlssNRDebugDifference = 0;
+		float    dlssNRDebugDifferenceGain = 10.0f;
 		uint32_t dlssNRPassCount = 1;          // 1..3; more passes = stronger, slower
 		// 0 = before the upscaler, 1 = after it. Before means DLSS's temporal
 		// resolve runs over the uplift and largely averages the added detail back

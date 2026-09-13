@@ -121,6 +121,18 @@ public:
 		UpliftEncoding             a_encoding,
 		float                      a_diffuseWhiteNits);
 
+	// Render the amplified difference between what went into the uplift and what
+	// came out, into a_destination. A near-black frame means the model changed
+	// nothing; visible structure means it did, however subtle it looks in place.
+	// Turns "does this actually do anything" into something that can be seen.
+	bool RenderUpliftDifference(
+		ID3D12Device*              a_device,
+		ID3D12GraphicsCommandList* a_commandList,
+		ID3D12Resource*            a_destination,
+		std::uint32_t              a_width,
+		std::uint32_t              a_height,
+		float                      a_amplification);
+
 	// Diffuse-white defaults matching the reference implementation.
 	[[nodiscard]] static float DefaultDiffuseWhiteNits(UpliftEncoding a_encoding)
 	{
@@ -169,6 +181,7 @@ private:
 	winrt::com_ptr<ID3D12PipelineState>  pipelineState;        // normals + roughness
 	winrt::com_ptr<ID3D12PipelineState>  upliftGuidePipeline;  // resampled motion + depth
 	winrt::com_ptr<ID3D12PipelineState>  upliftCodecPipeline;  // colour encode / decode
+	winrt::com_ptr<ID3D12PipelineState>  upliftDiffPipeline;   // before/after difference view
 	winrt::com_ptr<ID3D12DescriptorHeap> srvHeap;
 	winrt::com_ptr<ID3D12DescriptorHeap> rtvHeap;
 
