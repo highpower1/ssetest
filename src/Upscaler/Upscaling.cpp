@@ -57,7 +57,7 @@ RE::BSEventNotifyControl Upscaling::ProcessEvent(RE::InputEvent* const* a_event,
 		// Written straight into the live settings: the present thread reads this
 		// every frame, so the view changes on the next present with no menu, no
 		// save and no reload.
-		static constexpr const char* kViewNames[]{ "composite", "UI layer", "mask", "scene only", "pre-UI capture" };
+		static constexpr const char* kViewNames[]{ "composite", "UI layer", "mask", "scene only", "pre-UI capture", "split: ours | ENB" };
 		settings.uiCompositeDebug = (settings.uiCompositeDebug + 1) % static_cast<uint32_t>(std::size(kViewNames));
 		logger::info("[Upscaling] Composite debug view -> {} ({})",
 			settings.uiCompositeDebug, kViewNames[settings.uiCompositeDebug]);

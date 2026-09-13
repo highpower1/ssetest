@@ -215,15 +215,17 @@ namespace
 			"UI Mask Softness", settings.uiMaskSoftness, 0.0f, 1.0f, "%.3f",
 			"Width of the ramp above the threshold. 0 is a hard edge.");
 		ImGuiMCP::EndDisabled();
-		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only", "Pre-UI capture" };
+		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only", "Pre-UI capture", "Split: ours | ENB" };
 		changed |= ComboSetting(
 			"UI Composite Debug", settings.uiCompositeDebug, uiCompositeViews,
 			"Shows an intermediate image instead of the composite. UI layer is exactly what the composite "
 			"believes is UI -- everything visible there is being drawn over your scene. Mask shows white "
 			"where the scene is replaced. Scene only shows the upscaled image with nothing composited "
-			"over it. Pre-UI capture shows the snapshot the UI difference mask subtracts -- it should look "
-			"like your scene with no HUD at all. Mask, Scene only and Pre-UI capture hide the whole UI, "
-			"this panel included, so cycle them with the key below rather than from here.");
+			"over it. Pre-UI capture shows the snapshot the UI difference mask subtracts -- your scene with "
+			"no HUD at all. Split puts the upscaled image on the left and the game's own ENB-graded frame "
+			"on the right with a seam down the middle, which answers whether what we upscale already "
+			"carries ENB's grade. Everything except Off and UI layer hides the whole UI, this panel "
+			"included, so cycle them with the key below rather than from here.");
 		changed |= SliderIntSetting(
 			"Composite Debug Key", settings.uiCompositeDebugKey, 0, 255, "DIK 0x%02X",
 			"DirectInput scancode that cycles the view above while playing. 0x44 is F10; 0 disables the "

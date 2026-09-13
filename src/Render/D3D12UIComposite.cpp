@@ -206,6 +206,18 @@ float4 PSMain(PSInput input) : SV_TARGET
 	if (gDebugView == 4) {
 		return float4(uiBaseline.Sample(pointSampler, input.uv).rgb, 1.0f);  // the pre-UI capture
 	}
+	if (gDebugView == 5) {
+		// Our scene on the left, the game's own ENB-graded frame on the right,
+		// joined down the middle. Flicking between two full-screen images makes a
+		// difference in grading hard to judge and a difference in brightness easy
+		// to mistake for one; a seam does the opposite. If the halves meet without
+		// a step, the image we upscale already carries ENB's grade.
+		const float3 mine = base.rgb;
+		const float3 theirs = uiBaseline.Sample(pointSampler, input.uv).rgb;
+		const float  seam = abs(input.uv.x - 0.5f) < 0.0008f ? 1.0f : 0.0f;
+		const float3 joined = input.uv.x < 0.5f ? mine : theirs;
+		return float4(lerp(joined, float3(1.0f, 0.0f, 1.0f), seam), 1.0f);
+	}
 	return float4(lerp(base.rgb, uiColor, alpha), 1.0f);
 }
 )";
