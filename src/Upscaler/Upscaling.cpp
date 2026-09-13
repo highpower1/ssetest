@@ -12,6 +12,9 @@ void Upscaling::OnDataLoaded()
 	if (auto* ui = RE::UI::GetSingleton()) {
 		ui->AddEventSink<RE::MenuOpenCloseEvent>(this);
 	}
+	if (auto* input = RE::BSInputDeviceManager::GetSingleton()) {
+		input->AddEventSink(this);
+	}
 	SettingsStore::GetSingleton()->Load();
 
 	// STEP 2: enable the engine's dynamic-resolution render path so our
@@ -26,7 +29,41 @@ void Upscaling::OnDataLoaded()
 	// TODO(port): ApplyTextureMemoryUpgradeReserve() / UpdateGameSettings() land
 	// with the GPU body; they poke Fallout-4-specific INI settings and renderer
 	// memory reserves that need Skyrim equivalents.
-	logger::info("[Upscaling] Data loaded; menu sink registered");
+	{
+		const auto key = SettingsStore::GetSingleton()->settings.uiCompositeDebugKey;
+		logger::info("[Upscaling] Data loaded; menu and input sinks registered "
+					 "(composite debug cycle key = DIK 0x{:02X}{})",
+			key, key == 0 ? " -- disabled" : "");
+	}
+}
+
+RE::BSEventNotifyControl Upscaling::ProcessEvent(RE::InputEvent* const* a_event,
+	RE::BSTEventSource<RE::InputEvent*>*)
+{
+	auto& settings = SettingsStore::GetSingleton()->settings;
+	const auto wanted = settings.uiCompositeDebugKey;
+	if (!a_event || wanted == 0) {
+		return RE::BSEventNotifyControl::kContinue;
+	}
+
+	for (auto* event = *a_event; event; event = event->next) {
+		const auto* button = event->AsButtonEvent();
+		if (!button || !button->IsDown() || event->GetDevice() != RE::INPUT_DEVICE::kKeyboard) {
+			continue;
+		}
+		if (button->GetIDCode() != wanted) {
+			continue;
+		}
+		// Written straight into the live settings: the present thread reads this
+		// every frame, so the view changes on the next present with no menu, no
+		// save and no reload.
+		static constexpr const char* kViewNames[]{ "composite", "UI layer", "mask", "scene only" };
+		settings.uiCompositeDebug = (settings.uiCompositeDebug + 1) % 4;
+		logger::info("[Upscaling] Composite debug view -> {} ({})",
+			settings.uiCompositeDebug, kViewNames[settings.uiCompositeDebug]);
+	}
+
+	return RE::BSEventNotifyControl::kContinue;
 }
 
 RE::BSEventNotifyControl Upscaling::ProcessEvent(const RE::MenuOpenCloseEvent* a_event,

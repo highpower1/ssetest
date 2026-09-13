@@ -218,7 +218,12 @@ namespace
 			"Shows an intermediate image instead of the composite. UI layer is exactly what the composite "
 			"believes is UI -- everything visible there is being drawn over your scene. Mask shows white "
 			"where the scene is replaced. Scene only shows the upscaled image with nothing composited "
-			"over it.");
+			"over it. Mask and Scene only hide the whole UI, this panel included, so cycle them with the "
+			"key below rather than from here.");
+		changed |= SliderIntSetting(
+			"Composite Debug Key", settings.uiCompositeDebugKey, 0, 255, "DIK 0x%02X",
+			"DirectInput scancode that cycles the view above while playing. 0x44 is F10; 0 disables the "
+			"key. Mask and Scene only hide the UI, so this is the only way back out of them.");
 		changed |= CheckboxSetting(
 			"Transparency Hint",
 			settings.transparencyHint,

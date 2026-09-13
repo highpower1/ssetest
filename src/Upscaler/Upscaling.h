@@ -25,7 +25,9 @@
 // calling Streamline / DX12SwapChain directly the way the Fallout 4 code did.
 // ===========================================================================
 
-class Upscaling : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
+class Upscaling :
+	public RE::BSTEventSink<RE::MenuOpenCloseEvent>,
+	public RE::BSTEventSink<RE::InputEvent*>
 {
 public:
 	static Upscaling* GetSingleton()
@@ -69,6 +71,12 @@ public:
 	static void InstallHooks();               // engine render-pipeline hooks (scaffold)
 
 	// ---- menu event sink -------------------------------------------------
+	// The composite debug views that hide the UI also hide the Mod Control Panel,
+	// which is the only way to turn them off again. A key that cycles them is not
+	// a convenience here; without it those views are a trap.
+	RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_event,
+		RE::BSTEventSource<RE::InputEvent*>*) override;
+
 	RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event,
 		RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
 

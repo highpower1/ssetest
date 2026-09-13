@@ -64,6 +64,10 @@ public:
 		// cleared colour target. ENB's post-processing lands there too, so these
 		// exist to see what is being classified and to move the line.
 		uint32_t uiCompositeDebug = 0;   // 0 composite, 1 UI layer, 2 mask, 3 scene only
+		// DirectInput scancode that cycles uiCompositeDebug in game. Two of those
+		// views hide the UI, so without a key they cannot be turned off from
+		// inside the game. 0x44 = F10; 0 disables the key.
+		uint32_t uiCompositeDebugKey = 0x44;
 		uint32_t uiMaskMode = 0;         // 0 linear coverage, 1 soft threshold
 		float    uiMaskThreshold = 0.10f;
 		float    uiMaskSoftness = 0.20f;

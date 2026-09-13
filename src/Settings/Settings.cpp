@@ -58,6 +58,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "FrameGenWithSteamOverlay", settings.frameGenWithSteamOverlay);
 	GetUInt(ini, "PresentOverride", settings.presentOverride);
 	GetUInt(ini, "UICompositeDebug", settings.uiCompositeDebug);
+	GetUInt(ini, "UICompositeDebugKey", settings.uiCompositeDebugKey);
 	GetUInt(ini, "UIMaskMode", settings.uiMaskMode);
 	GetFloat(ini, "UIMaskThreshold", settings.uiMaskThreshold);
 	GetFloat(ini, "UIMaskSoftness", settings.uiMaskSoftness);
@@ -119,6 +120,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "FrameGenWithSteamOverlay", static_cast<long>(a_settings.frameGenWithSteamOverlay));
 	ini.SetLongValue(kSection, "PresentOverride", static_cast<long>(a_settings.presentOverride));
 	ini.SetLongValue(kSection, "UICompositeDebug", static_cast<long>(a_settings.uiCompositeDebug));
+	ini.SetLongValue(kSection, "UICompositeDebugKey", static_cast<long>(a_settings.uiCompositeDebugKey));
 	ini.SetLongValue(kSection, "UIMaskMode", static_cast<long>(a_settings.uiMaskMode));
 	ini.SetDoubleValue(kSection, "UIMaskThreshold", a_settings.uiMaskThreshold);
 	ini.SetDoubleValue(kSection, "UIMaskSoftness", a_settings.uiMaskSoftness);
