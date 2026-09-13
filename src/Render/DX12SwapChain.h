@@ -123,6 +123,13 @@ public:
 	bool EvaluateD3D12FSRForCurrentFrame();
 	bool EvaluateFSRFrameGenerationForCurrentFrame();
 	void SetPresentOverride(ID3D12Resource* a_finalColor);
+
+	// Snapshot the buffer the game presents from, taken after the world and
+	// ENB's post-processing have written it but before the UI is drawn over it.
+	// The difference between that snapshot and the final buffer is the UI, which
+	// is the only honest way to tell the UI apart from everything else that also
+	// lands on a target we cleared. Called from the pre-UI render hook.
+	void CaptureUIBaseline();
 	bool EnsureFidelityFXFrameGenerationSwapChain();
 	HRESULT GetBuffer(UINT a_buffer, REFIID a_riid, void** a_surface);
 	HRESULT GetDevice(REFIID a_riid, void** a_device);
@@ -168,6 +175,8 @@ private:
 	winrt::com_ptr<ID3D12Resource> swapChainBuffers[kDX12FrameCount];
 	std::unique_ptr<Texture2D> swapChainBufferProxy;
 	std::unique_ptr<D3D11D3D12SharedTexture> swapChainBufferProxyENB;
+	std::unique_ptr<D3D11D3D12SharedTexture> uiBaseline;
+	bool                                     uiBaselineValid = false;
 	CommandContext commandContexts[kCommandContextCount];
 	winrt::handle commandFenceEvent;
 	winrt::com_ptr<ID3D12Resource> presentOverrideFinalColor;

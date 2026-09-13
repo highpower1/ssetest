@@ -194,32 +194,36 @@ namespace
 			"this mod produces reaches the screen at all. That was measured, not assumed: clearing the "
 			"output to flat magenta changed nothing on screen. Leave this on Present override unless you "
 			"run without ENB.");
-		static constexpr std::array uiMaskModes{ "Linear coverage", "Soft threshold" };
+		static constexpr std::array uiMaskModes{ "Linear coverage", "Soft threshold", "UI difference (recommended)" };
 		changed |= ComboSetting(
 			"UI Mask", settings.uiMaskMode, uiMaskModes,
 			"Under Present override the game's colour target is cleared to black, the UI is drawn onto it, "
 			"and anything not black is composited over the upscaled scene. ENB's post-processing draws "
 			"there too, so where ENB light falls, ENB's pixel replaces the upscaled one -- this is why the "
-			"neural uplift can look like it stops working in lit areas. Linear coverage is the original "
-			"behaviour, which fades brightness into the scene. Soft threshold drops faint contributions "
-			"entirely and takes the rest as opaque UI; raise the threshold until ENB's glow stops "
-			"punching through, then check the HUD still looks right.");
+			"neural uplift can look like it stops working in lit areas, and why torch flames look wrong. "
+			"UI difference is the real answer: the buffer is captured again before the UI is drawn, and a "
+			"pixel counts as UI only where the two differ, so ENB cancels out. Linear coverage is the "
+			"original brightness heuristic and Soft threshold is the same idea with a cleaner cutoff; both "
+			"are kept because the difference mask depends on the capture landing at the right point.");
 		ImGuiMCP::BeginDisabled(settings.uiMaskMode == 0);
 		changed |= SliderFloatSetting(
 			"UI Mask Threshold", settings.uiMaskThreshold, 0.0f, 1.0f, "%.3f",
-			"Brightness below which a pixel is treated as scene, not UI.");
+			"Below this a pixel is treated as scene, not UI. For Soft threshold this is brightness; for "
+			"UI difference it is how far the pixel changed when the UI was drawn, so it wants a much "
+			"smaller value -- start around 0.02.");
 		changed |= SliderFloatSetting(
 			"UI Mask Softness", settings.uiMaskSoftness, 0.0f, 1.0f, "%.3f",
 			"Width of the ramp above the threshold. 0 is a hard edge.");
 		ImGuiMCP::EndDisabled();
-		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only" };
+		static constexpr std::array uiCompositeViews{ "Off", "UI layer", "Mask", "Scene only", "Pre-UI capture" };
 		changed |= ComboSetting(
 			"UI Composite Debug", settings.uiCompositeDebug, uiCompositeViews,
 			"Shows an intermediate image instead of the composite. UI layer is exactly what the composite "
 			"believes is UI -- everything visible there is being drawn over your scene. Mask shows white "
 			"where the scene is replaced. Scene only shows the upscaled image with nothing composited "
-			"over it. Mask and Scene only hide the whole UI, this panel included, so cycle them with the "
-			"key below rather than from here.");
+			"over it. Pre-UI capture shows the snapshot the UI difference mask subtracts -- it should look "
+			"like your scene with no HUD at all. Mask, Scene only and Pre-UI capture hide the whole UI, "
+			"this panel included, so cycle them with the key below rather than from here.");
 		changed |= SliderIntSetting(
 			"Composite Debug Key", settings.uiCompositeDebugKey, 0, 255, "DIK 0x%02X",
 			"DirectInput scancode that cycles the view above while playing. 0x44 is F10; 0 disables the "

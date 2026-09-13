@@ -106,6 +106,7 @@ bool D3D12UIComposite::EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_bac
 		const char* shaderSource = R"(
 Texture2D baseColor : register(t0);
 Texture2D postUI : register(t1);
+Texture2D uiBaseline : register(t2);
 SamplerState linearSampler : register(s0);
 SamplerState pointSampler : register(s1);
 
@@ -173,7 +174,16 @@ float4 PSMain(PSInput input) : SV_TARGET
 	// below fixes that; they only move the trade-off, and the debug views exist
 	// so the choice can be made by looking rather than by guessing.
 	float alpha;
-	if (gMaskMode == 1) {
+	if (gMaskMode == 2) {
+		// The honest mask. uiBaseline is the same buffer captured before the UI
+		// was drawn into it, so a pixel belongs to the UI exactly where the two
+		// differ. ENB's output is present in both and cancels, which is the whole
+		// point: brightness cannot tell a torch flame from a health bar, but
+		// "was this pixel changed by the UI pass" can.
+		const float3 delta = abs(afterUI.rgb - uiBaseline.Sample(pointSampler, input.uv).rgb);
+		const float  changed = max(delta.r, max(delta.g, delta.b));
+		alpha = smoothstep(gThreshold, gThreshold + max(gSoftness, 1e-4f), changed);
+	} else if (gMaskMode == 1) {
 		// Faint contributions are dropped outright and anything past the knee is
 		// taken as fully opaque UI, instead of the linear ramp's habit of
 		// half-dissolving both the UI and the scene into each other.
@@ -192,6 +202,9 @@ float4 PSMain(PSInput input) : SV_TARGET
 	}
 	if (gDebugView == 3) {
 		return float4(base.rgb, 1.0f);             // the upscaled scene, uncomposited
+	}
+	if (gDebugView == 4) {
+		return float4(uiBaseline.Sample(pointSampler, input.uv).rgb, 1.0f);  // the pre-UI capture
 	}
 	return float4(lerp(base.rgb, uiColor, alpha), 1.0f);
 }
@@ -256,6 +269,7 @@ void D3D12UIComposite::Render(
 	ID3D12Resource* a_backBuffer,
 	ID3D12Resource* a_baseColor,
 	ID3D12Resource* a_postUI,
+	ID3D12Resource* a_uiBaseline,
 	DXGI_FORMAT a_backBufferFormat,
 	uint32_t a_width,
 	uint32_t a_height,
@@ -276,6 +290,9 @@ void D3D12UIComposite::Render(
 	const auto srvBaseIndex = a_descriptorSlot * kSRVsPerSlot;
 	CreateSRV(a_device, a_baseColor, srvBaseIndex);
 	CreateSRV(a_device, a_postUI, srvBaseIndex + 1);
+	// Falls back to postUI when no baseline exists, which makes the difference
+	// zero and the mask empty -- visibly wrong rather than quietly wrong.
+	CreateSRV(a_device, a_uiBaseline ? a_uiBaseline : a_postUI, srvBaseIndex + 2);
 
 	const auto rtvIncrement = a_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	auto rtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();

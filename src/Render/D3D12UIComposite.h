@@ -14,8 +14,8 @@ public:
 	// which of the intermediate images to show instead of the composite.
 	struct MaskParams
 	{
-		uint32_t debugView = 0;  // 0 composite, 1 UI layer, 2 mask, 3 scene only
-		uint32_t maskMode = 0;   // 0 linear coverage, 1 soft threshold
+		uint32_t debugView = 0;  // 0 composite, 1 UI layer, 2 mask, 3 scene only, 4 pre-UI baseline
+		uint32_t maskMode = 0;   // 0 linear coverage, 1 soft threshold, 2 difference from the baseline
 		float    threshold = 0.10f;
 		float    softness = 0.20f;
 	};
@@ -32,6 +32,7 @@ public:
 		ID3D12Resource* a_backBuffer,
 		ID3D12Resource* a_baseColor,
 		ID3D12Resource* a_postUI,
+		ID3D12Resource* a_uiBaseline,
 		DXGI_FORMAT a_backBufferFormat,
 		uint32_t a_width,
 		uint32_t a_height,
@@ -43,7 +44,7 @@ private:
 	bool EnsureResources(ID3D12Device* a_device, DXGI_FORMAT a_backBufferFormat, uint32_t a_descriptorSlotCount);
 	void CreateSRV(ID3D12Device* a_device, ID3D12Resource* a_resource, uint32_t a_index);
 
-	static constexpr uint32_t kSRVsPerSlot = 2;
+	static constexpr uint32_t kSRVsPerSlot = 3;
 
 	winrt::com_ptr<ID3D12Device> device;
 	winrt::com_ptr<ID3D12RootSignature> rootSignature;

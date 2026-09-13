@@ -539,6 +539,8 @@ void DX12SwapChain::RecreateInteropTextures()
 		swapChainBufferProxy = std::make_unique<Texture2D>(proxyTexture.detach());
 		swapChainBufferProxyENB = nullptr;
 	}
+	uiBaseline = std::make_unique<D3D11D3D12SharedTexture>(textureDesc, d3d11Device.get(), d3d12Device.get());
+	uiBaselineValid = false;
 	for (auto& context : commandContexts) {
 		context.presentStaging = std::make_unique<D3D11D3D12SharedTexture>(textureDesc, d3d11Device.get(), d3d12Device.get());
 	}
@@ -974,10 +976,15 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 	commandList->ResourceBarrier(static_cast<UINT>(std::size(beforeCopy)), beforeCopy);
 	D3D12_RESOURCE_STATES destinationState = D3D12_RESOURCE_STATE_COPY_DEST;
 	if (usePresentOverride) {
+		auto* uiBaselineResource = (uiBaselineValid && uiBaseline) ? uiBaseline->resource12.get() : nullptr;
 		D3D12_RESOURCE_BARRIER beforeComposite[] = {
 			CD3DX12_RESOURCE_BARRIER::Transition(destination, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET),
 			CD3DX12_RESOURCE_BARRIER::Transition(overrideFinalColor, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 		};
+		if (uiBaselineResource) {
+			auto toRead = CD3DX12_RESOURCE_BARRIER::Transition(uiBaselineResource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			commandList->ResourceBarrier(1, &toRead);
+		}
 		commandList->ResourceBarrier(static_cast<UINT>(std::size(beforeComposite)), beforeComposite);
 		const auto& compositeSettings = SettingsStore::GetSingleton()->settings;
 		const D3D12UIComposite::MaskParams maskParams{
@@ -992,6 +999,7 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 			destination,
 			overrideFinalColor,
 			copySource,
+			uiBaselineResource,
 			swapChainDesc.Format,
 			swapChainDesc.Width,
 			swapChainDesc.Height,
@@ -1000,6 +1008,10 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 			maskParams);
 		auto afterComposite = CD3DX12_RESOURCE_BARRIER::Transition(overrideFinalColor, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
 		commandList->ResourceBarrier(1, &afterComposite);
+		if (uiBaselineResource) {
+			auto backToCommon = CD3DX12_RESOURCE_BARRIER::Transition(uiBaselineResource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+			commandList->ResourceBarrier(1, &backToCommon);
+		}
 		destinationState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 	} else {
 		commandList->CopyResource(destination, copySource);
@@ -1315,6 +1327,31 @@ bool DX12SwapChain::EvaluateD3D12FSRForCurrentFrame()
 bool DX12SwapChain::EvaluateFSRFrameGenerationForCurrentFrame()
 {
 	return EvaluateD3D12WorkForCurrentFrame(false, false, true).fsrFrameGeneration;
+}
+
+void DX12SwapChain::CaptureUIBaseline()
+{
+	if (!IsReady() || !uiBaseline || !d3d11Context) {
+		return;
+	}
+	ID3D11Resource* source = swapChainBufferProxyENB ?
+	                             static_cast<ID3D11Resource*>(swapChainBufferProxyENB->resource11.get()) :
+	                             (swapChainBufferProxy ? swapChainBufferProxy->resource.get() : nullptr);
+	if (!source) {
+		return;
+	}
+	// Recorded on the same immediate context that the present's own copies use,
+	// so the fence the present already signals orders this write against the
+	// D3D12 read. No extra synchronisation is needed.
+	d3d11Context->CopyResource(uiBaseline->resource11.get(), source);
+	uiBaselineValid = true;
+
+	static bool logged = false;
+	if (!logged) {
+		logged = true;
+		logger::info("[DX12SwapChain] UI baseline capture started ({})",
+			swapChainBufferProxyENB ? "ENB proxy buffer" : "proxy buffer");
+	}
 }
 
 void DX12SwapChain::SetPresentOverride(ID3D12Resource* a_finalColor)

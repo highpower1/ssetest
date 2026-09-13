@@ -5,6 +5,7 @@
 #include "Game/Util.h"
 #include "Game/Renderer.h"
 #include "Neural/NeuralRendering.h"
+#include "Render/DX12SwapChain.h"
 #include "Render/Streamline.h"
 #include "Upscaler/D3D12Upscaler.h"
 #include "Upscaler/Upscaling.h"
@@ -171,6 +172,10 @@ namespace
 			// (increment 2a = identity round-trip to validate sync).
 			D3D12Upscaler::GetSingleton()->Evaluate();
 			func(a_renderer, a_unk);
+			// Everything the world and ENB draw has landed in the presented buffer
+			// by here; the UI has not. Snapshot it so the composite can subtract
+			// this from the final buffer and get the UI on its own.
+			DX12SwapChain::GetSingleton()->CaptureUIBaseline();
 			if (n <= 3 || (n % 600) == 0) {
 				logger::info("[UpscalerHooks] MainDrawWorld(pre-UI) fired frame={}", n);
 			}
