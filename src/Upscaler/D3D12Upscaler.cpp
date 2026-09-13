@@ -12,6 +12,7 @@
 #include "Settings/Settings.h"
 #include "Upscaler/Upscaling.h"  // kFrameGenExperiment
 
+#include <functional>
 #include <utility>
 
 namespace
@@ -863,14 +864,28 @@ void D3D12Upscaler::Evaluate()
 			// which settings produced which stretch of frames.
 			{
 				const auto& o = nrParameters.options;
-				const auto fingerprint = o.style * 1000u + o.preset * 100u + nrParameters.passCount * 10u +
-				                         (o.useAutoMask ? 1u : 0u);
+				// Hash every value that is swept, not just the integer ones: the
+				// earlier fingerprint ignored the strengths and the encoding, so
+				// changing them left no trace in the log at all.
+				const auto mix = [](std::size_t a_seed, float a_value) {
+					return a_seed * 1099511628211ull ^ std::hash<float>{}(a_value);
+				};
+				std::size_t fingerprint = o.style;
+				fingerprint = fingerprint * 131 + o.preset;
+				fingerprint = fingerprint * 131 + nrParameters.passCount;
+				fingerprint = fingerprint * 131 + (o.useAutoMask ? 1u : 0u);
+				fingerprint = fingerprint * 131 + neuralEncoding;
+				fingerprint = fingerprint * 131 + (nrAfterUpscale ? 1u : 0u);
+				fingerprint = mix(fingerprint, o.intensity);
+				fingerprint = mix(fingerprint, o.localToneStrength);
+				fingerprint = mix(fingerprint, o.localStructureStrength);
+				fingerprint = mix(fingerprint, o.skinStructureStrength);
 				if (fingerprint != loggedNeuralConfig) {
 					loggedNeuralConfig = fingerprint;
-					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f} encoding={}",
+					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
 						o.style, o.preset, nrParameters.passCount, o.useAutoMask,
-						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength,
-						neuralEncoding);
+						nrAfterUpscale ? "after" : "before", neuralEncoding,
+						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength);
 				}
 			}
 			nrParameters.inputWidth = nrParameters.outputWidth = nrParameters.guideWidth = nrWidth;

@@ -72,6 +72,11 @@ void SettingsStore::Load()
 	lastWriteTime = std::filesystem::last_write_time(path, ec);
 
 	logger::info("[Settings] Loaded from {}", path.string());
+	logger::info("[Settings] Neural Rendering: enabled={} style={} preset={} passes={} autoMask={} order={} encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
+		settings.dlssNREnabled, settings.dlssNRStyle, settings.dlssNRPreset, settings.dlssNRPassCount,
+		settings.dlssNRUseAutoMask, settings.dlssNRAfterUpscale ? "after" : "before", settings.dlssNREncoding,
+		settings.dlssNRIntensity, settings.dlssNRLocalToneStrength,
+		settings.dlssNRLocalStructureStrength, settings.dlssNRSkinStructureStrength);
 }
 
 bool SettingsStore::Save(const Settings& a_settings)
