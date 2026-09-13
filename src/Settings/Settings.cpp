@@ -50,6 +50,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "ImageSpaceEffectLog", settings.imageSpaceEffectLog);
 	settings.sharpness = static_cast<float>(ini.GetDoubleValue(kSection, "Sharpness", settings.sharpness));
 	GetUInt(ini, "TransparencyHint", settings.transparencyHint);
+	GetUInt(ini, "FrameGenWithSteamOverlay", settings.frameGenWithSteamOverlay);
 	GetUInt(ini, "NeuralRayReconstruction", settings.neuralRayReconstruction);
 	GetUInt(ini, "NeuralExternalModules", settings.neuralExternalModules);
 	GetUInt(ini, "DLSSNREnabled", settings.dlssNREnabled);
@@ -105,6 +106,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "ImageSpaceEffectLog", static_cast<long>(a_settings.imageSpaceEffectLog));
 	ini.SetDoubleValue(kSection, "Sharpness", a_settings.sharpness);
 	ini.SetLongValue(kSection, "TransparencyHint", static_cast<long>(a_settings.transparencyHint));
+	ini.SetLongValue(kSection, "FrameGenWithSteamOverlay", static_cast<long>(a_settings.frameGenWithSteamOverlay));
 	ini.SetLongValue(kSection, "NeuralRayReconstruction", static_cast<long>(a_settings.neuralRayReconstruction));
 	ini.SetLongValue(kSection, "NeuralExternalModules", static_cast<long>(a_settings.neuralExternalModules));
 	ini.SetLongValue(kSection, "DLSSNREnabled", static_cast<long>(a_settings.dlssNREnabled));

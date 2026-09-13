@@ -144,9 +144,27 @@ bool Upscaling::IsSteamOverlayLoaded()
 	return loaded;
 }
 
+bool Upscaling::IsFrameGenerationBlockedByOverlay()
+{
+	if (!IsSteamOverlayLoaded()) {
+		return false;
+	}
+	if (SettingsStore::GetSingleton()->settings.frameGenWithSteamOverlay == 0) {
+		return true;
+	}
+	static bool loggedOverride = false;
+	if (!loggedOverride) {
+		loggedOverride = true;
+		logger::warn("[Upscaling] Frame generation is running with the Steam overlay loaded, by explicit setting. "
+					 "The overlay has faulted on DLSS-G's present thread before; if the game crashes inside "
+					 "gameoverlayrenderer64.dll, this is why.");
+	}
+	return false;
+}
+
 bool Upscaling::ShouldBlockFrameGeneration() const
 {
-	return ShouldBlockTemporalFeatures() || !dlssgMenuResumeReady || IsSteamOverlayLoaded();
+	return ShouldBlockTemporalFeatures() || !dlssgMenuResumeReady || IsFrameGenerationBlockedByOverlay();
 }
 
 bool Upscaling::IsFeatureRequestBlocked(FeatureRequest) const

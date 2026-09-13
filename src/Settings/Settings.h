@@ -48,6 +48,10 @@ public:
 		// Hand the engine's TAA mask to the upscaler as a transparency hint, so
 		// particles, water and other alpha-blended pixels stop ghosting.
 		uint32_t transparencyHint = 1;
+		// Run frame generation even though the Steam overlay is loaded. Off by
+		// default: the overlay faults on DLSS-G's present thread, which produced a
+		// reproducible access violation. Opt in only knowing that.
+		uint32_t frameGenWithSteamOverlay = 0;
 
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR

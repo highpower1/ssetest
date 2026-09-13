@@ -200,11 +200,17 @@ namespace
 		const bool steamOverlay = Upscaling::IsSteamOverlayLoaded();
 		if (steamOverlay) {
 			ImGuiMCP::TextWrapped(
-				"Frame Generation is disabled because the Steam overlay is loaded: DLSS-G presents from its "
-				"own thread and the overlay faults on that path. Turn the overlay off for Skyrim in "
-				"Properties -> General -> In-Game Overlay.");
+				"The Steam overlay is loaded. DLSS-G presents from its own thread and the overlay has "
+				"faulted on that path, so Frame Generation is disabled. The clean fix is to turn the "
+				"overlay off for Skyrim in Properties -> General -> In-Game Overlay.");
+			changed |= CheckboxSetting(
+				"Run Frame Generation anyway",
+				settings.frameGenWithSteamOverlay,
+				"Runs frame generation with the overlay loaded regardless. If the game crashes inside "
+				"gameoverlayrenderer64.dll, this is the cause.");
 		}
-		ImGuiMCP::BeginDisabled(upscalingDisabled || !Upscaling::kEnableDLSSG || steamOverlay);
+		const bool overlayBlocks = steamOverlay && settings.frameGenWithSteamOverlay == 0;
+		ImGuiMCP::BeginDisabled(upscalingDisabled || !Upscaling::kEnableDLSSG || overlayBlocks);
 		static constexpr std::array frameGenerationModes{ "Disabled", "On", "Auto" };
 		changed |= ComboSetting(
 			"Frame Generation",

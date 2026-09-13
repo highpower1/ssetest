@@ -15,6 +15,12 @@ should not be removed casually.
 when DLSS-G presents from its own thread. Frame generation is disabled while
 `gameoverlayrenderer64.dll` is loaded rather than left to crash.
 
+This one can be overridden -- `FrameGenWithSteamOverlay = 1`, or the checkbox
+that appears beside the warning -- because the fault is a crash rather than a
+driver hang, and some configurations evidently survive it. It stays off by
+default and logs a warning when used, so a crash inside the overlay has an
+obvious cause. The clean fix is still to turn the overlay off for Skyrim.
+
 
 **A present watchdog.** `DX12SwapChain` times each Present call. Two consecutive
 calls over 80 ms, or an outright failed present, latch frame generation off for

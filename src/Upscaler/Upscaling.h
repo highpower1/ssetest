@@ -81,6 +81,9 @@ public:
 	// that path -- an access violation inside gameoverlayrenderer64.dll. Frame
 	// generation is refused while the overlay is loaded.
 	static bool   IsSteamOverlayLoaded();
+	// Whether the overlay is actually standing in the way. Detection is one thing;
+	// the player may override it, having been told what it costs.
+	static bool   IsFrameGenerationBlockedByOverlay();
 	bool          ShouldUseFrameGeneration(bool a_checkMenu);
 	bool          ShouldUseFSRFrameGeneration(bool a_checkMenu);
 

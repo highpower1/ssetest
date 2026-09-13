@@ -60,6 +60,6 @@ run at 0, and pass counts above one are now available.
 
 ## Open: frame generation is unavailable with the Steam overlay
 
-Not a bug to fix here -- the overlay faults on DLSS-G's own present thread -- but
-it does mean frame generation and the Steam overlay cannot both be on. See
-[SAFETY.md](SAFETY.md).
+Not a bug to fix here -- the overlay faults on DLSS-G's own present thread. It
+is blocked by default and can be overridden with `FrameGenWithSteamOverlay = 1`
+for configurations that survive it. See [SAFETY.md](SAFETY.md).
