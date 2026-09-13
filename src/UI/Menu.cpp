@@ -185,14 +185,15 @@ namespace
 			1.0f,
 			"%.2f",
 			"Controls NVIDIA Image Scaling sharpen for DLSS and RCAS for FSR.");
-		static constexpr std::array presentPaths{ "Copy back (ENB grades the result)", "Present override (needed for Frame Generation)" };
+		static constexpr std::array presentPaths{ "Copy back (no effect under ENB)", "Present override" };
 		changed |= ComboSetting(
 			"Output Path", settings.presentOverride, presentPaths,
-			"How the upscaled scene reaches the screen. Copy back hands it to the game's colour target so "
-			"ENB tonemaps and grades it as usual. Present override keeps it on D3D12 and composites the UI "
-			"at present, which frame generation requires but which leaves ENB's post-processing running on "
-			"a cleared target, so it never touches the scene. If the image looks flatter with the upscaler "
-			"on than with it off, this is why.");
+			"How the upscaled scene reaches the screen. Present override keeps it on D3D12 and composites "
+			"the UI at present; frame generation requires it. Copy back writes into the game's colour "
+			"target instead -- but with ENB installed, ENB's own chain overwrites that target, so nothing "
+			"this mod produces reaches the screen at all. That was measured, not assumed: clearing the "
+			"output to flat magenta changed nothing on screen. Leave this on Present override unless you "
+			"run without ENB.");
 		changed |= CheckboxSetting(
 			"Transparency Hint",
 			settings.transparencyHint,

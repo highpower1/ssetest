@@ -59,9 +59,24 @@ not black in the UI buffer is UI, everything else is the scene.
 That has a cost worth stating plainly: **ENB's post-processing runs on the
 cleared colour target, so it never touches the scene it is supposed to grade.**
 The scene reaches the screen as the upscaler produced it, without ENB's
-tonemapping, bloom or colour grading. `PresentOverride = 0` restores the older
-path -- copy the result back into `kMAIN`, let ENB do its work, and lose frame
-generation, which cannot pace a present it does not own.
+tonemapping, bloom or colour grading. Worse, whatever ENB *does* draw onto that
+cleared target -- bloom, lens effects, its own light sprites -- is non-black,
+and `D3D12UIComposite` classifies non-black as UI, so it is composited over the
+scene. Where ENB light falls, ENB's version of the pixel wins.
+
+`PresentOverride = 0` is not a way out. It restores the older path -- copy the
+result into `kMAIN` and let the game present normally -- but with ENB installed
+that path is dead: **ENB's chain overwrites `kMAIN` after we write it, so
+nothing this mod renders reaches the screen at all.** This was measured, not
+reasoned about. With `DLSSNRDebugBypass = 1` the uplift target is cleared to
+flat magenta; on the present-override path the screen turns magenta, and on the
+copy-back path under ENB it does not change. Not the uplift, not sharpening,
+not the upscaler's own output.
+
+So under ENB there is currently exactly one working output path, and its known
+defect is the composite's inability to tell ENB's post-processing from UI.
+Fixing that -- giving the composite a real UI mask instead of a luminance
+heuristic -- is the open problem, not choosing between the two paths.
 
 > The composite's coverage term must be derived from colour alone. Folding in
 > the UI buffer's alpha discards the entire scene: that buffer is a copy of an

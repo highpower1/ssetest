@@ -6,6 +6,8 @@
 #include "Game/Util.h"
 #include "Render/D3D12NeuralGBuffer.h"
 #include "Render/DeviceRemovedReport.h"
+
+extern bool enbLoaded;  // main.cpp: set when ENB's d3d11.dll is loaded
 #include "Render/DX12SwapChain.h"  // D3D11D3D12SharedTexture
 #include "Render/Streamline.h"
 #include "Render/FidelityFX.h"
@@ -486,6 +488,19 @@ void D3D12Upscaler::UpdateFromSettings()
 	sharpness = s.sharpness;
 	transparencyHint = s.transparencyHint != 0;
 	presentOverride = s.presentOverride != 0;
+	// This combination renders correctly and then throws the result away: ENB's
+	// chain overwrites kMAIN after we copy into it. Proven with the debug bypass
+	// -- a flat magenta fill did not reach the screen. Say so rather than let it
+	// read as "the upscaler does nothing".
+	if (!presentOverride && enbLoaded) {
+		static bool loggedDeadPath = false;
+		if (!loggedDeadPath) {
+			loggedDeadPath = true;
+			logger::warn("[D3D12Upscaler] PresentOverride is 0 and ENB is present. ENB overwrites the colour "
+						 "target we copy into, so nothing this mod renders will reach the screen -- not the "
+						 "upscaler, not sharpening, not the neural uplift. Set PresentOverride = 1.");
+		}
+	}
 	// Ray Reconstruction replaces DLSS super resolution with the DLSS-D denoiser.
 	// It is a DLSS-path-only option and needs the feature to have come up.
 	rayReconstruction = s.neuralRayReconstruction != 0 && Streamline::GetSingleton()->featureDLSSD;
