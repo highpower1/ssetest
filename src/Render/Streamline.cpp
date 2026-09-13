@@ -1578,6 +1578,11 @@ bool Streamline::UpscaleD3D12(ID3D12Resource* a_color, ID3D12Resource* a_outputC
 	return true;
 }
 
+bool Streamline::SharpenD3D12(ID3D12Resource* a_inputColor, ID3D12Resource* a_outputColor, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness)
+{
+	return ApplyNISSharpenD3D12(a_inputColor, a_outputColor, a_commandList, a_frameToken, a_displaySize, a_sharpness);
+}
+
 bool Streamline::UpdateConstants(float2 a_jitter)
 {
 	static auto gameViewport = Util::State_GetSingleton();

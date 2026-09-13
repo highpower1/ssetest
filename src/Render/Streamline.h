@@ -240,6 +240,12 @@ public:
 	bool directDLSSNRReady = false;
 	[[nodiscard]] bool IsDLSSNRUsable() const { return featureDLSSNR || directDLSSNRReady; }
 
+	/// NVIDIA Image Scaling sharpen over an already-resolved image. DLSS has no
+	/// sharpening of its own any more, and Ray Reconstruction's evaluate takes no
+	/// sharpened-output parameter at all, so both paths sharpen through here.
+	/// Returns false when sharpness is zero or NIS is unavailable.
+	bool SharpenD3D12(ID3D12Resource* a_inputColor, ID3D12Resource* a_outputColor, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_displaySize, float a_sharpness);
+
 	/// Highest generated-frame count the runtime will accept, after the RTX 40
 	/// unlock has had its say. 1 means plain 2x. Surfaced in the menu so the
 	/// player can see how far the multiplier can actually be raised.

@@ -143,6 +143,11 @@ private:
 	// instead of colorInput. D3D12-only: nothing on the D3D11 side needs it.
 	winrt::com_ptr<ID3D12Resource>           neuralColor;
 	winrt::com_ptr<ID3D12DescriptorHeap>     neuralColorRTVHeap;  // one RTV, for the debug clear
+	// NIS sharpen output. Separate from colorOutput because NIS cannot sharpen a
+	// texture in place, and separate from neuralColor because the uplift reads
+	// the sharpened image rather than replacing it.
+	winrt::com_ptr<ID3D12Resource>           sharpenedColor;
+	bool EnsureSharpenedColor();
 	bool EnsureNeuralColor();
 
 	uint32_t displayWidth = 0;
@@ -177,6 +182,9 @@ private:
 	// Set for the frames where the uplift ran after the upscaler: present and
 	// DLSS-G read this instead of colorOutput. Null on every other frame.
 	ID3D12Resource* neuralColorReady = nullptr;
+	// The upscaler's output for this frame, sharpened if NIS ran. Null outside a
+	// successful evaluate.
+	ID3D12Resource* resolvedSceneColor = nullptr;
 	ID3D12Resource* loggedPresentOverride = nullptr;
 	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
 	uint32_t neuralFramesTotal = 0;

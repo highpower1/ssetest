@@ -326,6 +326,9 @@ ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const
 	if (neuralColorReady) {
 		return neuralColorReady;
 	}
+	if (resolvedSceneColor) {
+		return resolvedSceneColor;  // sharpened, when NIS ran this frame
+	}
 	return colorOutput ? colorOutput->resource12.get() : nullptr;
 }
 ID3D12Resource* D3D12Upscaler::GetMotionVectors12() const { return motionVectors ? motionVectors->resource12.get() : nullptr; }
@@ -435,6 +438,42 @@ void D3D12Upscaler::UpdateFromSettings()
 	// Method off, or a native-AA quality on the FSR path (FSR has no DLAA), means
 	// render at full res (no DRS). DLSS keeps DLAA at quality 0.
 	renderScale = (method == 0) ? 1.0f : RenderScaleForQuality(qualityMode);
+}
+
+bool D3D12Upscaler::EnsureSharpenedColor()
+{
+	if (sharpenedColor) {
+		return true;
+	}
+	if (!d3d12Device || displayWidth == 0 || displayHeight == 0) {
+		return false;
+	}
+
+	D3D12_HEAP_PROPERTIES heap{};
+	heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	desc.Width = displayWidth;
+	desc.Height = displayHeight;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+	desc.SampleDesc.Count = 1;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	// NIS writes its result through an unordered-access view.
+	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+	const auto hr = d3d12Device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+		D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(sharpenedColor.put()));
+	if (FAILED(hr)) {
+		logger::warn("[D3D12Upscaler] Could not create the sharpen target {}x{}: 0x{:08X}",
+			displayWidth, displayHeight, static_cast<uint32_t>(hr));
+		sharpenedColor = nullptr;
+		return false;
+	}
+	logger::info("[D3D12Upscaler] Sharpen target created {}x{}", displayWidth, displayHeight);
+	return true;
 }
 
 void D3D12Upscaler::ReportNeuralFailure()
@@ -580,6 +619,7 @@ void D3D12Upscaler::Evaluate()
 		// upscaler's own output. Leaving this set would hand them last active
 		// frame's image while a menu or loading screen is up.
 		neuralColorReady = nullptr;
+		resolvedSceneColor = nullptr;
 		neuralRenderingActive = false;
 		// Nothing to do; make sure the frame is presented at full resolution and
 		// DLSS-G is disabled (so the present doesn't tag stale resources).
@@ -692,6 +732,7 @@ void D3D12Upscaler::Evaluate()
 		// is not actually scaling. So: after by default, before when scaling.
 		ID3D12Resource* upscalerInput = colorInput->resource12.get();
 		neuralColorReady = nullptr;
+		resolvedSceneColor = nullptr;
 		neuralRenderingActive = false;
 
 		nvngx::dlss_nr::D3D12EvaluationParameters nrParameters{};
@@ -929,6 +970,20 @@ void D3D12Upscaler::Evaluate()
 			Transition(commandList.get(), colorOutput->resource12.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COMMON);
 		}
 
+		// NVIDIA Image Scaling sharpen over the resolved image. The slider used to
+		// affect only FSR: the DLSS path passed no sharpened-output target, and
+		// Ray Reconstruction's evaluate has no such parameter at all, so both went
+		// through unsharpened however the slider was set.
+		ID3D12Resource* resolvedColor = colorOutput->resource12.get();
+		if (ok && method == 2 && sharpness > 0.0f && frameToken && EnsureSharpenedColor()) {
+			if (sl->SharpenD3D12(colorOutput->resource12.get(), sharpenedColor.get(),
+					commandList.get(), frameToken, displaySize, sharpness)) {
+				resolvedColor = sharpenedColor.get();
+				sharpened = true;
+			}
+		}
+		resolvedSceneColor = resolvedColor;
+
 		// Uplift the resolved image. This is the ordering that actually shows on
 		// screen, because nothing temporal runs after it to average it away.
 		if (ok && nrWanted && nrAfterUpscale) {
@@ -955,10 +1010,10 @@ void D3D12Upscaler::Evaluate()
 				                            D3D12NeuralGBuffer::DefaultDiffuseWhiteNits(encoding);
 
 				const bool encoded = guides->EncodeForUplift(
-					d3d12Device.get(), commandList.get(), colorOutput->resource12.get(),
+					d3d12Device.get(), commandList.get(), resolvedColor,
 					displayWidth, displayHeight, encoding, whiteNits);
 
-				nrParameters.color = encoded ? guides->GetUpliftEncoded() : colorOutput->resource12.get();
+				nrParameters.color = encoded ? guides->GetUpliftEncoded() : resolvedColor;
 				nrParameters.output = encoded ? guides->GetUpliftResult() : neuralColor.get();
 
 				const auto finish = [&] {

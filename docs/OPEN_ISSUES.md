@@ -41,10 +41,9 @@ guides sampled where the jittered raster actually put each feature, and colour
 normalised into a defined encoding with a diffuse-white reference. The change on
 screen is still hard to see.
 
-That may be the honest result on a rasterised, already-resolved Skyrim frame.
-Before concluding it, **NR Debug: show difference** presents the amplified
-before/after difference: a near-black frame means the model changed nothing,
-visible structure means it did and only the amount is in question.
+**NR Debug: show difference** settled the first question: the model is clearly
+changing the image. So this is not a dead integration -- it is a question of how
+the change reads once composited, and of the inputs listed below.
 
 Still not supplied to the model, per the RenoDX reference addon:
 

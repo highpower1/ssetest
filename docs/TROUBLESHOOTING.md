@@ -114,8 +114,6 @@ the search before either of the above is needed.
   startup. Restart the game after changing resolution.
 - **FSR frame generation is not implemented.** `EvaluateFSRFrameGeneration` is a
   stub; only DLSS-G generates frames.
-- **The sharpness slider only affects FSR.** The DLSS path passes no sharpened
-  output target, so the NIS sharpen pass cannot run.
 - **No transparency or reactive mask.** Both are passed as null, so particles,
   water and foliage can ghost more than they should.
 - **Ray Reconstruction guides are synthetic** — geometric normals with constant
