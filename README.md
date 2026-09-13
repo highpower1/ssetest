@@ -39,7 +39,7 @@ upscaler this project is derived from, which is itself a fork of
 | DLSS Ray Reconstruction | Skyrim has no G-buffer, so normals are reconstructed from depth and the material terms are constants ([details](docs/ARCHITECTURE.md)) |
 | DLSS 5 Neural Rendering | Off by default. Needs `nvngx_dlssnr.dll`; driven through NGX directly, since Streamline publishes no interface for it |
 | External neural modules | Runs DLLs from `Data/SKSE/Plugins/SkyrimUpscaler/Neural/` once per frame on the scene colour ([ABI](docs/NEURAL_MODULES.md)) |
-| ENB compatibility | The upscaled scene and the game's UI are composited at present time rather than written back into the game's colour target |
+| ENB compatibility | The upscaler runs at the point the scene is finished and before the game's post-processing reads it, so ENB tonemaps and grades the upscaled image as it would the game's own ([details](docs/ARCHITECTURE.md)) |
 | In-game settings | SKSE Menu Framework 3; saved to `SkyrimUpscaler.ini` |
 
 ## Requirements

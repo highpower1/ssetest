@@ -1,0 +1,156 @@
+[center][size=6][b]Skyrim Upscaler -- DLSS 4 / DLSS 5 Neural Rendering / FSR[/b][/size]
+[size=3]DLSS, DLAA, Frame Generation, Ray Reconstruction and NVIDIA's Neural Rendering, with ENB.[/size][/center]
+
+[line]
+
+[center][size=5][color=#ff4444][b]DO NOT RUN THIS WITH COMMUNITY SHADERS[/b][/color][/size][/center]
+
+[b]Not "it might conflict" -- it will not work.[/b] Community Shaders replaces the same part of Skyrim's renderer this plugin hooks into, and it already has its own upscaling built in. Two mods cannot own the same render pipeline.
+
+[b]Install one or the other. Never both.[/b] If both are present, uninstall one before reporting anything.
+
+[b]ENB is fine.[/b] ENB is supported and tested. Your preset's tonemapping, colour grading and effects all still apply to the upscaled image.
+
+[line]
+
+[size=5][b]What this does[/b][/size]
+
+Three separate features. All of them are optional and you can run any combination.
+
+[list]
+[*][b]Upscaling -- DLSS, DLAA and FSR.[/b] Skyrim renders at a lower resolution and the upscaler rebuilds a full-resolution image. You get frames back. At [b]Native AA[/b] it does not lower the resolution at all and instead gives you far better anti-aliasing than Skyrim's own TAA.
+[*][b]Frame Generation.[/b] The GPU creates extra frames between the real ones. On RTX 40 cards the driver's 2x cap can be lifted up to 6x.
+[*][b]DLSS 5 Neural Rendering.[/b] NVIDIA's neural model reworks the finished image -- materials, lighting and skin stop looking flat. This is the newest feature and the hardest to get running.
+[/list]
+
+Everything is configured in game. No ini editing required.
+
+[line]
+
+[size=5][b]Requirements[/b][/size]
+
+[list]
+[*]Skyrim Special Edition [b]1.5.97[/b] or Anniversary Edition [b]1.6.x[/b] -- VR and GOG are not supported
+[*][url=https://skse.silverlock.org/]SKSE64[/url]
+[*][url=https://www.nexusmods.com/skyrimspecialedition/mods/120352]SKSE Menu Framework[/url]
+[*]An NVIDIA RTX card for the DLSS features. FSR runs on anything.
+[*]NVIDIA's Streamline runtime DLLs -- [b]you have to supply these yourself[/b], see below
+[*][b]Community Shaders must not be installed[/b]
+[/list]
+
+[b]FSR[/b] -- any reasonably modern GPU
+[b]DLSS / DLAA / Ray Reconstruction[/b] -- NVIDIA RTX
+[b]Frame Generation[/b] -- NVIDIA RTX 40 or 50
+[b]Neural Rendering[/b] -- NVIDIA RTX [b]and[/b] a DLL you must find yourself
+
+[line]
+
+[size=5][b]Installation[/b][/size]
+
+[list=1]
+[*]Install with your mod manager, or drop the [font=Courier New]SKSE[/font] folder into [font=Courier New]Data[/font].
+[*]Put NVIDIA's Streamline DLLs in [font=Courier New]Data/SKSE/Plugins/SkyrimUpscaler/Streamline/[/font]. There is a text file already in that folder listing exactly which ones.
+[*]Launch, press [b]F1[/b] to open the Mod Control Panel, and pick [b]SkyrimUpscaler[/b].
+[/list]
+
+[b]Why do I have to download extra DLLs?[/b]
+NVIDIA's DLSS runtime and AMD's FSR runtime are distributed by NVIDIA and AMD under their own licences and cannot be bundled here. Every file is reported as [font=Courier New]found[/font] or [font=Courier New]missing[/font] in the log at startup, so a missing one is easy to spot. A feature whose DLLs are absent simply stays unavailable in the menu -- nothing breaks.
+
+[line]
+
+[size=5][b]Neural Rendering will not turn on. Why?[/b][/size]
+
+[b]This is expected on most cards and it is not a bug in this mod.[/b]
+
+The [font=Courier New]nvngx_dlssnr.dll[/font] NVIDIA ships only contains code for RTX 50-series GPUs. On a 20, 30 or 40 series card it loads and then refuses to run. A community-patched build exists, and the [url=https://discord.com/invite/renodx][b]RenoDX Discord[/b][/url] is where that work happens and where the file is shared.
+
+[b]Neural Rendering in this mod would not exist without them.[/b] Please go and say thank you, not only to download.
+
+[line]
+
+[size=5][b]About Frame Generation[/b][/size]
+
+Read this before turning it on.
+
+[list]
+[*]It [b]doubles the number on your frame counter[/b] and makes motion look smoother.
+[*]It does [b]not[/b] make the game feel more responsive. Input latency stays roughly the same or gets slightly worse.
+[*]It needs a decent real frame rate to start with. Enabling it at 25 fps will not feel good.
+[/list]
+
+[color=#ffaa00][b]Turn the Steam overlay off for Skyrim before using it.[/b][/color] Steam -> Skyrim -> Properties -> General -> In-Game Overlay. The overlay crashes when frame generation presents from its own thread. The mod refuses to run frame generation while it sees the overlay; there is a setting to override that, and if you do, a crash is on you.
+
+[b]Honest warning:[/b] during development frame generation hung the GPU more than once, and produced a [font=Courier New]DPC_WATCHDOG_VIOLATION[/font] bugcheck on one occasion. That class of failure is fixed and it has since run for tens of thousands of frames without incident, but it is off by default for a reason. A watchdog latches it off for the session if a Present call blocks.
+
+[line]
+
+[size=5][b]Defaults[/b][/size]
+
+[list]
+[*]Frame Generation -- [b]off[/b]
+[*]Neural Rendering -- [b]off[/b]
+[*]Upscaling -- [b]Native AA[/b]
+[/list]
+
+[b]Native AA does not raise your frame rate.[/b] It renders at full resolution and runs the upscaler on top, so it costs a few frames. You are paying for anti-aliasing, not for speed. If you want frames, pick Quality, Balanced or Performance.
+
+[line]
+
+[size=5][b]Status[/b][/size]
+
+[b]Experimental.[/b] Every feature listed here has been seen working in game, on exactly one configuration: an RTX 4070 Ti, AE 1.6.1170, ENB, 1920x1080. No other hardware, runtime version or resolution has been tested by the author.
+
+Known things worth saying out loud:
+
+[list]
+[*]Skyrim has no G-buffer, so Ray Reconstruction's normals are reconstructed from depth and its material inputs are constants. It works, but it is not being fed what the model was designed for.
+[*]Frame Generation and the Steam overlay do not coexist.
+[*]Only Steam SE 1.5.97 and AE 1.6.x. VR and GOG are out of scope and will not be added.
+[/list]
+
+[line]
+
+[size=5][b]Something is wrong[/b][/size]
+
+The log is at:
+[font=Courier New]Documents/My Games/Skyrim Special Edition/SKSE/SkyrimUpscaler.log[/font]
+
+It is rewritten every launch and records what loaded, what did not, and why. [b]Attach it to any bug report[/b] even if it means nothing to you -- it usually means something to whoever reads it.
+
+Quick checks before reporting:
+[list=1]
+[*]Turn Frame Generation off and try again. It is the single most likely cause of a freeze.
+[*]Confirm Community Shaders is not installed.
+[*]Confirm the Streamline DLLs are in the right folder.
+[/list]
+
+[b]The screen went strange after I pressed a key?[/b] Press [b]F10[/b] a few more times. F10 cycles diagnostic views used during development, and some of them hide the entire interface. Keep pressing until it looks normal. Set [font=Courier New]UICompositeDebugKey = 0[/font] in the ini to disable the key entirely.
+
+[line]
+
+[size=5][b]Credits[/b][/size]
+
+This mod is a port. Almost none of the hard problems it solves were solved here first.
+
+[list]
+[*][url=https://github.com/doodlum/fo4test][b]doodlum[/b][/url] -- where this lineage begins. Also the author of [b]Community Shaders[/b], which this page tells you not to run alongside this mod. That is a fact about two things interposing on one render pipeline and nothing more; it takes nothing away from the fact that this project stands on their work.
+[*][url=https://github.com/jarari/fo4test][b]jarari[/b][/url] -- the Fallout 4 upscaler this is a port of. The D3D12 proxy swapchain, the present path, the Streamline and FidelityFX wrappers and the Neural Rendering backend all come through their fork. Their [font=Courier New]test/dlss-nr[/font] branch reconstructed the DLSS-NR interface NVIDIA has never published.
+[*][url=https://discord.com/invite/renodx][b]RenoDX[/b][/url] and its community -- for the runtime DLLs that make DLSS 5 Neural Rendering possible here at all, and for getting the feature running on hardware NVIDIA had not enabled it for.
+[*][url=https://github.com/dashdogy/RTX40MFG-Unlock][b]Michael Robles (dashdogy)[/b][/url] -- RTX40MFG-Unlock, which lifts the 2x frame generation cap on Ada.
+[*][url=https://github.com/PureDark/Skyrim-Upscaler][b]PureDark[/b][/url] -- the public 2022 repository that identified the engine hook points everyone since has used.
+[*][b]Boris Vorontsov[/b] -- ENBSeries. The present path in this mod is shaped almost entirely by the requirement to coexist with it.
+[*][b]ianpatt, behippo, purple lunchbox[/b] -- SKSE64.
+[*][b]Ryan McKenzie[/b] and [b]CharmedBaryon[/b] -- CommonLibSSE and CommonLibSSE-NG.
+[*][url=https://github.com/QTR-Modding/SKSE-Menu-Framework-3][b]Thiago099[/b][/url] -- SKSE Menu Framework 3, and everyone credited on its own page.
+[*][b]NVIDIA[/b] and [b]AMD[/b] -- Streamline / NGX and the FidelityFX SDK.
+[/list]
+
+Full list with licences in [font=Courier New]Docs/CREDITS.md[/font].
+
+[line]
+
+[size=5][b]Licence and source[/b][/size]
+
+GPL-3.0. Source: [url=https://github.com/nashglyx/ssetest]github.com/nashglyx/ssetest[/url]
+
+[size=2][i]Disclosure: this plugin was written with heavy use of AI coding tools (Claude Code and Codex). Read the source before you trust it with your GPU.[/i][/size]
