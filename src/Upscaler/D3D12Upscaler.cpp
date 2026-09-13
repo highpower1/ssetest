@@ -717,7 +717,14 @@ void D3D12Upscaler::Evaluate()
 
 	// Engine TAA: off while actively upscaling (so it can't touch the low-res
 	// scene before our resolve), restored to the player's setting otherwise.
-	const bool wantTAAOff = active && upscaling;
+	//
+	// At the scene-complete hook it has to go off whether we are downscaling or
+	// not. There the engine's TAA runs *after* us, so at Native AA -- where
+	// nothing else would turn it off -- a second temporal accumulation lands on
+	// top of DLAA's and the uplift's, and the first thing that costs is whatever
+	// moves most between frames: particles.
+	const bool sceneCompleteHook = SettingsStore::GetSingleton()->settings.upscalerHookPoint == 1;
+	const bool wantTAAOff = active && (upscaling || sceneCompleteHook);
 	if (wantTAAOff && !taaOffApplied) {
 		SetEngineTAA(false);
 		taaOffApplied = true;
