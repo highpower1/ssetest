@@ -25,16 +25,16 @@
 //                 rotating the result into world space. Geometric rather than
 //                 shading normals -- no normal-map detail -- but exact, with no
 //                 guesswork about an engine encoding.
-//   roughness  -- a constant (fully rough). Tells RR to treat the scene as
-//                 diffuse, which is the honest description of a raster frame
-//                 that has no separable specular signal.
+//   roughness  -- a constant (fully rough), so RR treats the scene as diffuse.
+//                 A raster frame has no separable specular signal, so no other
+//                 value is defensible.
 //   albedo     -- a constant white, so RR's demodulate/re-modulate round trip
 //                 is the identity and cannot tint the image.
 //   spec albedo-- constant black: no specular lobe for RR to reproject.
 //
-// With those constants RR degenerates into "denoise the colour directly", which
-// is exactly what a rasterised frame needs from it -- the win is the transformer
-// model, not the ray-tracing machinery.
+// With those constants RR reduces to denoising the colour directly: the
+// ray-tracing machinery has nothing to act on, and what remains in use is the
+// transformer model.
 // ===========================================================================
 
 class D3D12NeuralGBuffer

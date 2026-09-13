@@ -56,10 +56,11 @@ override. `kMAIN` is cleared to black so the game's own UI pass draws onto
 black, and `D3D12UIComposite` merges the two at present time: a pixel that is
 not black in the UI buffer is UI, everything else is the scene.
 
-> That composite is worth understanding, because getting it wrong is invisible
-> in the log. Its coverage term must be derived from colour alone. Folding in
-> the UI buffer's alpha silently discards the entire scene, because that buffer
-> is a copy of an *opaque* backbuffer whose alpha is 1 everywhere.
+> The composite's coverage term must be derived from colour alone. Folding in
+> the UI buffer's alpha discards the entire scene: that buffer is a copy of an
+> opaque backbuffer, so its alpha is 1 at every pixel, coverage saturates, and
+> the shader returns the UI buffer everywhere. Nothing in the log changes when
+> this happens.
 
 ## Engine interposition points
 
@@ -94,14 +95,15 @@ the TAA and SSR masks.
   positions. Each gradient takes the nearer of its two neighbours so object
   silhouettes do not produce normals pointing at nothing. Geometric rather than
   shading normals, but exact — no guessing at an engine encoding.
-- **Roughness** is 1.0, the honest description of a raster frame with no
-  separable specular signal.
+- **Roughness** is 1.0. A raster frame has no separable specular signal, so
+  fully rough is the only defensible value.
 - **Albedo** is white, so RR's demodulate/re-modulate round trip is the identity
   and cannot tint the image.
 - **Specular albedo** is black: no specular lobe to reproject.
 
-With those constants RR reduces to denoising the colour directly. That is the
-point — the win is the transformer model, not the ray-tracing machinery.
+With those constants RR reduces to denoising the colour directly: the
+ray-tracing machinery has nothing to act on, and what remains in use is the
+transformer model.
 
 Super Resolution and Ray Reconstruction cannot share a Streamline viewport, so
 each options path turns the other off when it takes over.

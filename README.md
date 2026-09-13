@@ -16,25 +16,26 @@ and Anniversary Edition — alongside ENB, configured in-game.
 Ported from [jarari/fo4test](https://github.com/jarari/fo4test), the Fallout 4
 upscaler this project is derived from.
 
-> **Status: working, but experimental.** Every feature below has been validated
-> in-game on an RTX 4070 Ti running AE 1.6.1170 with ENB. It has not been tested
-> broadly, and frame generation in particular drives the GPU hard enough that a
-> bad configuration used to hang the driver. Read
-> [docs/SAFETY.md](docs/SAFETY.md) before enabling it.
+> **Status: experimental.** Every feature listed below has been observed working
+> in-game, on one configuration: an RTX 4070 Ti, AE 1.6.1170, ENB, 1920x1080.
+> No other hardware, runtime or resolution has been tested. During development,
+> frame generation hung the GPU repeatedly and once produced a
+> `DPC_WATCHDOG_VIOLATION` bugcheck; it is off by default and guarded, and
+> [docs/SAFETY.md](docs/SAFETY.md) describes what by.
 
 ## Features
 
 | Feature | Notes |
 | --- | --- |
-| DLSS Super Resolution | DLAA through Ultra Performance |
-| AMD FSR | For non-RTX hardware |
-| DLSS Frame Generation | Guarded by a present watchdog |
-| RTX 40 multi-frame generation | Via [RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock); Ada is otherwise capped at 2x |
-| DLSS Ray Reconstruction | Guides are synthesised — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| DLSS 5 Neural Rendering | Driven directly through NGX; Streamline has no contract for it |
-| External neural modules | Load your own DLL — see [docs/NEURAL_MODULES.md](docs/NEURAL_MODULES.md) |
-| ENB compatibility | The final image is composited rather than fought over |
-| In-game settings | SKSE Menu Framework 3 |
+| DLSS Super Resolution | Quality modes DLAA, Quality, Balanced, Performance, Ultra Performance |
+| AMD FSR | Same quality modes; works without an RTX GPU |
+| DLSS Frame Generation | 2x. Off by default. A present watchdog disables it for the session after two consecutive Present calls over 80 ms |
+| RTX 40 multi-frame generation | Up to 6x on Ada, which the driver otherwise caps at 2x, via [RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock) |
+| DLSS Ray Reconstruction | Skyrim has no G-buffer, so normals are reconstructed from depth and the material terms are constants ([details](docs/ARCHITECTURE.md)) |
+| DLSS 5 Neural Rendering | Off by default. Needs `nvngx_dlssnr.dll`; driven through NGX directly, since Streamline publishes no interface for it |
+| External neural modules | Runs DLLs from `Data/SKSE/Plugins/SkyrimUpscaler/Neural/` once per frame on the scene colour ([ABI](docs/NEURAL_MODULES.md)) |
+| ENB compatibility | The upscaled scene and the game's UI are composited at present time rather than written back into the game's colour target |
+| In-game settings | SKSE Menu Framework 3; saved to `SkyrimUpscaler.ini` |
 
 ## Requirements
 
