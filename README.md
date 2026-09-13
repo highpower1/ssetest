@@ -1,3 +1,6 @@
+## Disclaimer: This is an AI slop generated with codex and love
+
+
 # SkyrimUpscaler
 
 > ## **Do not run this with Community Shaders.**
