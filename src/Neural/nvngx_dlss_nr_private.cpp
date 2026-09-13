@@ -617,6 +617,8 @@ namespace nvngx::dlss_nr
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecSubrectHeight, a_evaluationParameters.guideHeight);
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleX, a_evaluationParameters.motionVectorScaleX);
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_MVecScaleY, a_evaluationParameters.motionVectorScaleY);
+		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_JitterOffsetX, a_evaluationParameters.jitterOffsetX);
+		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_JitterOffsetY, a_evaluationParameters.jitterOffsetY);
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthSubrectBaseX, 0u);
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthSubrectBaseY, 0u);
 		a_parameters->Set(NVSDK_NGX_Parameter_DLSSNR_DepthSubrectWidth, a_evaluationParameters.guideWidth);

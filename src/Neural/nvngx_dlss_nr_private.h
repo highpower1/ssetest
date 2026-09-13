@@ -45,6 +45,10 @@ inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecSubrectBaseX[] = "DLSSNR.MV
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecSubrectBaseY[] = "DLSSNR.MVecSubrectBaseY";
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecSubrectWidth[] = "DLSSNR.MVecSubrectWidth";
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecSubrectHeight[] = "DLSSNR.MVecSubrectHeight";
+// Recovered from the reference addon's binary; the upstream backend never set
+// these, so the model was left to assume the input was unjittered.
+inline constexpr char NVSDK_NGX_Parameter_DLSSNR_JitterOffsetX[] = "DLSSNR.JitterOffsetX";
+inline constexpr char NVSDK_NGX_Parameter_DLSSNR_JitterOffsetY[] = "DLSSNR.JitterOffsetY";
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecScaleX[] = "DLSSNR.MVecScaleX";
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_MVecScaleY[] = "DLSSNR.MVecScaleY";
 inline constexpr char NVSDK_NGX_Parameter_DLSSNR_DepthSubrectBaseX[] = "DLSSNR.DepthSubrectBaseX";
@@ -98,6 +102,11 @@ namespace nvngx::dlss_nr
 		std::uint32_t guideHeight = 0;
 		float motionVectorScaleX = 1.0f;
 		float motionVectorScaleY = 1.0f;
+		// Sub-pixel jitter of the image being uplifted, in pixels. Zero when the
+		// input is already resolved: the upscaler removed the jitter, so claiming
+		// any would misplace every temporal sample the model takes.
+		float jitterOffsetX = 0.0f;
+		float jitterOffsetY = 0.0f;
 		bool depthInverted = false;
 		bool reset = false;
 		std::uint32_t passCount = 1;
@@ -108,6 +117,11 @@ namespace nvngx::dlss_nr
 	class D3D12Backend
 	{
 	public:
+		// Matches the reference addon's ceiling. The feature and intermediate
+		// arrays are sized from this, so raising it needs nothing else. Public
+		// because callers clamp their own requests against it.
+		static constexpr std::uint32_t kMaxPassCount = 10;
+
 		D3D12Backend() = default;
 		~D3D12Backend();
 
@@ -181,7 +195,6 @@ namespace nvngx::dlss_nr
 		ID3D12Device* device_ = nullptr;
 		bool initializationAttempted_ = false;
 		bool initialized_ = false;
-		static constexpr std::uint32_t kMaxPassCount = 3;
 		std::array<FeatureState, kMaxPassCount> features_{};
 		std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kMaxPassCount - 1> intermediateResources_{};
 		std::uint32_t intermediateWidth_ = 0;

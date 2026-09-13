@@ -343,16 +343,10 @@ namespace
 			changed |= SliderIntSetting(
 				"NR Style", settings.dlssNRStyle, 0, 4, "%d",
 				"Selects the model's look. Undocumented; sweep it if the uplift seems to do nothing.");
-			{
-				// 1..3 passes: each one re-runs the uplift over its own output.
-				static constexpr std::array nrPasses{ "1 pass", "2 passes", "3 passes" };
-				uint32_t passIndex = std::clamp(settings.dlssNRPassCount, 1u, 3u) - 1u;
-				if (ComboSetting("NR Passes", passIndex, nrPasses,
-						"More passes push the effect further at a proportional cost.")) {
-					settings.dlssNRPassCount = passIndex + 1u;
-					changed = true;
-				}
-			}
+			changed |= SliderIntSetting(
+				"NR Passes", settings.dlssNRPassCount, 1, 10, "%d",
+				"Re-runs the uplift over its own output. Each pass pushes the effect further at a "
+				"proportional cost, and local tone is applied only on the first so it does not compound.");
 			changed |= CheckboxSetting(
 				"NR Debug: show difference",
 				settings.dlssNRDebugDifference,

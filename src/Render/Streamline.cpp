@@ -334,7 +334,7 @@ nvngx::dlss_nr::D3D12EvaluationParameters Streamline::MakeDLSSNRParameters()
 	parameters.options.localStructureStrength = s.dlssNRLocalStructureStrength;
 	parameters.options.skinStructureStrength = s.dlssNRSkinStructureStrength;
 	parameters.options.useAutoMask = s.dlssNRUseAutoMask != 0;
-	parameters.passCount = std::clamp(s.dlssNRPassCount, 1u, 3u);
+	parameters.passCount = std::clamp(s.dlssNRPassCount, 1u, nvngx::dlss_nr::D3D12Backend::kMaxPassCount);
 	return parameters;
 }
 

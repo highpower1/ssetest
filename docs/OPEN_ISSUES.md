@@ -45,14 +45,18 @@ screen is still hard to see.
 changing the image. So this is not a dead integration -- it is a question of how
 the change reads once composited, and of the inputs listed below.
 
-Still not supplied to the model, per the RenoDX reference addon:
+Since then the explicit `DLSSNR.JitterOffsetX/Y` parameters are set (zero after
+the upscaler, where the image is already resolved; the frame's negated Halton
+offset before it) and the pass ceiling is the reference's ten rather than three.
 
-- `DLSSNR.JitterOffsetX` / `JitterOffsetY`. Jitter is currently folded into
-  where the guides are sampled rather than passed explicitly.
-- `DLSSNR.UI` and `DLSSNR.UIAlpha`, with `UICorrection` left at 0.
-- `Style` chooses between model variants (the addon labels them Model A, B and
-  C) and has only ever been run at 0.
-- Pass count is clamped to 3; the reference allows up to 10.
+`DLSSNR.UI` and `UIAlpha` are deliberately not supplied. UI correction exists for
+implementations that uplift the finished frame including the HUD; ours runs at
+the pre-UI hook on the hud-less scene, and the UI is composited afterwards at
+present time. There is no UI in the input to correct for.
+
+What is left to try is settings rather than plumbing: `Style` selects between
+model variants (the addon labels them Model A, B and C) and has only ever been
+run at 0, and pass counts above one are now available.
 
 ## Open: frame generation is unavailable with the Steam overlay
 

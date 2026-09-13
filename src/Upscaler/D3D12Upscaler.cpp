@@ -862,6 +862,17 @@ void D3D12Upscaler::Evaluate()
 			nrParameters.inputWidth = nrParameters.outputWidth = nrParameters.guideWidth = nrWidth;
 			nrParameters.inputHeight = nrParameters.outputHeight = nrParameters.guideHeight = nrHeight;
 
+			// After the upscaler the image is resolved and unjittered, so the model
+			// must be told zero. Before it, the scene still carries this frame's
+			// Halton offset, negated to match the convention the rest of the
+			// pipeline hands Streamline.
+			if (!nrAfterUpscale) {
+				const auto* cameraFrame = Util::CameraFrame::GetSingleton();
+				if (cameraFrame->useJitter) {
+					nrParameters.jitterOffsetX = -cameraFrame->jitter.x;
+					nrParameters.jitterOffsetY = -cameraFrame->jitter.y;
+				}
+			}
 			nrParameters.depthInverted = false;
 			nrParameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 			nrParameters.reset = neuralRenderingSkipFrame;
