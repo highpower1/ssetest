@@ -144,6 +144,11 @@ private:
 	std::unique_ptr<D3D11D3D12SharedTexture> colorOutput;
 	std::unique_ptr<D3D11D3D12SharedTexture> motionVectors;
 	std::unique_ptr<D3D11D3D12SharedTexture> depth;
+	// The engine's TAA mask, handed to the upscaler as a transparency hint. It
+	// marks the pixels the engine itself refuses to accumulate temporally --
+	// particles, water, anything alpha-blended -- which is what both DLSS and FSR
+	// want to know to stop those from ghosting.
+	std::unique_ptr<D3D11D3D12SharedTexture> transparencyMask;
 	// DLSS-NR writes here rather than in place, and the upscaler then reads it
 	// instead of colorInput. D3D12-only: nothing on the D3D11 side needs it.
 	winrt::com_ptr<ID3D12Resource>           neuralColor;
@@ -192,6 +197,8 @@ private:
 	ID3D12Resource* resolvedSceneColor = nullptr;
 	ID3D12Resource* loggedPresentOverride = nullptr;
 	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
+	bool     transparencyHint = true;
+	bool     loggedTransparencyMismatch = false;
 	uint32_t pendingDisplayWidth = 0;
 	uint32_t pendingDisplayHeight = 0;
 	uint32_t neuralFramesTotal = 0;

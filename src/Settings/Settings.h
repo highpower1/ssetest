@@ -45,6 +45,9 @@ public:
 		uint32_t taggedTextureDebug = 0;
 		uint32_t imageSpaceEffectLog = 0;
 		float    sharpness = 0.2f;
+		// Hand the engine's TAA mask to the upscaler as a transparency hint, so
+		// particles, water and other alpha-blended pixels stop ghosting.
+		uint32_t transparencyHint = 1;
 
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR

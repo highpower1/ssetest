@@ -112,8 +112,10 @@ the search before either of the above is needed.
 
 - **FSR frame generation is not implemented.** `EvaluateFSRFrameGeneration` is a
   stub; only DLSS-G generates frames.
-- **No transparency or reactive mask.** Both are passed as null, so particles,
-  water and foliage can ghost more than they should.
+- **The transparency hint is the engine's TAA mask**, not a mask built from an
+  opaque-only render. Skyrim has no reliable opaque-only colour to difference
+  against, and the TAA mask already marks what the engine refuses to accumulate.
+  No reactive mask is supplied.
 - **Ray Reconstruction guides are synthetic** — geometric normals with constant
   material terms. See [ARCHITECTURE.md](ARCHITECTURE.md).
 - **VR and GOG are out of scope.**

@@ -1279,7 +1279,7 @@ bool Streamline::EnsureD3D12DLSSDOptions(sl::DLSSMode a_mode, uint32_t a_outputW
 	return true;
 }
 
-bool Streamline::UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness)
+bool Streamline::UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12Resource* a_transparencyMask, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness)
 {
 	if (!featureDLSSD || !slDLSSDSetOptions || !slEvaluateFeature || !slSetTagForFrame ||
 		!a_color || !a_outputColor || !a_motionVectors || !a_depth ||
@@ -1336,6 +1336,8 @@ bool Streamline::UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outpu
 	sl::Resource albedo = { sl::ResourceType::eTex2d, a_albedo, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
 	sl::Resource specularAlbedo = { sl::ResourceType::eTex2d, a_specularAlbedo, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
 
+	sl::Resource transparency = { sl::ResourceType::eTex2d, a_transparencyMask, nullptr, nullptr, D3D12_RESOURCE_STATE_COMMON };
+
 	sl::ResourceTag resourceTags[] = {
 		{ &colorIn, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
 		{ &colorOut, sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eOnlyValidNow, &fullExtent },
@@ -1344,9 +1346,13 @@ bool Streamline::UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outpu
 		{ &normalRoughness, sl::kBufferTypeNormalRoughness, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
 		{ &albedo, sl::kBufferTypeAlbedo, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
 		{ &specularAlbedo, sl::kBufferTypeSpecularAlbedo, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
+		{ &transparency, sl::kBufferTypeTransparencyHint, sl::ResourceLifecycle::eOnlyValidNow, &lowResExtent },
 	};
 
-	if (SL_FAILED(result, slSetTagForFrame(*a_frameToken, viewport, resourceTags, _countof(resourceTags), a_commandList))) {
+	// The transparency hint is optional; drop the tag rather than tag a null.
+	const auto numResourceTags = static_cast<uint32_t>(
+		a_transparencyMask ? _countof(resourceTags) : _countof(resourceTags) - 1);
+	if (SL_FAILED(result, slSetTagForFrame(*a_frameToken, viewport, resourceTags, numResourceTags, a_commandList))) {
 		logger::warn("[Streamline] Could not tag D3D12 DLSS-RR resources: {} token={} render={}x{} display={}x{}",
 			magic_enum::enum_name(result),
 			static_cast<uint32_t>(*a_frameToken),

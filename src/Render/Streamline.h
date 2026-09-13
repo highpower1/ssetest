@@ -150,7 +150,7 @@ public:
 	 * into .w, diffuse albedo, specular albedo). a_worldToView is the game's view
 	 * matrix; RR needs it and its inverse to interpret the normals.
 	 */
-	bool UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness);
+	bool UpscaleD3D12RR(ID3D12Resource* a_color, ID3D12Resource* a_outputColor, ID3D12Resource* a_motionVectors, ID3D12Resource* a_depth, ID3D12Resource* a_normalRoughness, ID3D12Resource* a_albedo, ID3D12Resource* a_specularAlbedo, ID3D12Resource* a_transparencyMask, ID3D12GraphicsCommandList* a_commandList, sl::FrameToken* a_frameToken, float2 a_renderSize, float2 a_displaySize, const DirectX::XMMATRIX& a_worldToView, uint a_qualityMode, float a_sharpness);
 
 	/**
 	 * @brief Update Streamline constants for current frame

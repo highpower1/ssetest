@@ -129,6 +129,10 @@ bool D3D12Upscaler::CreateSharedTextures(uint32_t a_width, uint32_t a_height)
 			MakeInteropDesc(a_width, a_height, DXGI_FORMAT_R16G16_FLOAT), d3d11Device.get(), d3d12Device.get());
 		depth = std::make_unique<D3D11D3D12SharedTexture>(
 			MakeInteropDesc(a_width, a_height, DXGI_FORMAT_R32_FLOAT), d3d11Device.get(), d3d12Device.get());
+		// Transparency hint, copied from the engine's own TAA mask. Same format as
+		// kTEMPORAL_AA_MASK so the copy needs no conversion.
+		transparencyMask = std::make_unique<D3D11D3D12SharedTexture>(
+			MakeInteropDesc(a_width, a_height, DXGI_FORMAT_R8G8_UNORM), d3d11Device.get(), d3d12Device.get());
 	} catch (const std::exception& e) {
 		logger::error("[D3D12Upscaler] Shared texture creation failed: {}", e.what());
 		return false;
@@ -473,6 +477,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	qualityMode = s.qualityMode;          // 0=Native/DLAA .. 4=Ultra
 	dlssPreset = s.dlssModelPreset;
 	sharpness = s.sharpness;
+	transparencyHint = s.transparencyHint != 0;
 	// Ray Reconstruction replaces DLSS super resolution with the DLSS-D denoiser.
 	// It is a DLSS-path-only option and needs the feature to have come up.
 	rayReconstruction = s.neuralRayReconstruction != 0 && Streamline::GetSingleton()->featureDLSSD;
@@ -744,6 +749,25 @@ void D3D12Upscaler::Evaluate()
 		d3d11Context4->CopyResource(colorInput->resource11.get(), kMain);
 		d3d11Context4->CopyResource(motionVectors->resource11.get(), kMv);
 		d3d11Context4->CopyResource(depth->resource11.get(), kDepth);
+
+		// Only copy the mask if the engine target matches what we allocated;
+		// CopyResource has no conversion and a mismatch is a silent corruption.
+		ID3D12Resource* transparency = nullptr;
+		if (transparencyHint && transparencyMask) {
+			if (auto* kTaaMask = Game::GetRenderTargetTexture(RE::RENDER_TARGET::kTEMPORAL_AA_MASK)) {
+				D3D11_TEXTURE2D_DESC maskDesc{};
+				kTaaMask->GetDesc(&maskDesc);
+				if (maskDesc.Width == displayWidth && maskDesc.Height == displayHeight &&
+					maskDesc.Format == DXGI_FORMAT_R8G8_UNORM) {
+					d3d11Context4->CopyResource(transparencyMask->resource11.get(), kTaaMask);
+					transparency = transparencyMask->resource12.get();
+				} else if (!loggedTransparencyMismatch) {
+					loggedTransparencyMismatch = true;
+					logger::warn("[D3D12Upscaler] kTEMPORAL_AA_MASK is {}x{} fmt={}, not the expected {}x{} R8G8_UNORM; transparency hint disabled",
+						maskDesc.Width, maskDesc.Height, static_cast<uint32_t>(maskDesc.Format), displayWidth, displayHeight);
+				}
+			}
+		}
 		const auto inputsReadyValue = syncValue.fetch_add(1, std::memory_order_acq_rel) + 1;
 		stage = "d3d11 signal inputs-ready";
 		DX::ThrowIfFailed(d3d11Context4->Signal(d3d11Fence.get(), inputsReadyValue));
@@ -961,6 +985,7 @@ void D3D12Upscaler::Evaluate()
 					gbuffer->GetNormalRoughness(),
 					gbuffer->GetAlbedo(),
 					gbuffer->GetSpecularAlbedo(),
+					transparency,
 					commandList.get(),
 					frameToken,
 					renderSize, displaySize,
@@ -981,7 +1006,7 @@ void D3D12Upscaler::Evaluate()
 					nullptr,  // sharpened output
 					motionVectors->resource12.get(),
 					depth->resource12.get(),
-					nullptr,  // transparency mask
+					transparency,
 					commandList.get(),
 					frameToken,
 					renderSize, displaySize,
@@ -1005,7 +1030,7 @@ void D3D12Upscaler::Evaluate()
 				nullptr,  // sharpened output
 				motionVectors->resource12.get(),
 				depth->resource12.get(),
-				nullptr,  // transparency mask
+				transparency,
 				commandList.get(),
 				frameToken,
 				renderSize, displaySize,

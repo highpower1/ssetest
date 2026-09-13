@@ -185,6 +185,12 @@ namespace
 			1.0f,
 			"%.2f",
 			"Controls NVIDIA Image Scaling sharpen for DLSS and RCAS for FSR.");
+		changed |= CheckboxSetting(
+			"Transparency Hint",
+			settings.transparencyHint,
+			"Passes the engine's own TAA mask to the upscaler so it knows which pixels are "
+			"alpha-blended. Reduces ghosting on particles, water and foliage. Turn off if those "
+			"areas look noisy or unstable instead.");
 
 		ImGuiMCP::SeparatorText("Frame Generation and Latency");
 		const bool upscalingDisabled = settings.upscaleMethodPreference == static_cast<uint32_t>(SettingsStore::UpscaleMethod::kDisabled);
