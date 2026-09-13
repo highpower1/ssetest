@@ -143,6 +143,9 @@ public:
 	// (unblocked once the first loading screen finishes -> in-world). See
 	// Upscaling::ProcessEvent.
 	bool          temporalFeaturesBlocked = true;
+	// RaceMenu is handled separately from the outright block: see
+	// Upscaling::ShouldBlockUpscaling.
+	bool          raceMenuOpen = false;
 	bool          frameGenerationActive = false;
 	bool          fsrFrameGenerationActive = false;
 	bool          dlssgMenuResumeReady = true;

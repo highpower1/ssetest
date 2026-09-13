@@ -94,8 +94,22 @@ RE::BSEventNotifyControl Upscaling::ProcessEvent(const RE::MenuOpenCloseEvent* a
 		if (a_event->opening) {
 			temporalFeaturesBlocked = true;
 		}
-	} else if (name == RE::LoadingMenu::MENU_NAME || name == RE::RaceSexMenu::MENU_NAME) {
+	} else if (name == RE::LoadingMenu::MENU_NAME) {
 		temporalFeaturesBlocked = a_event->opening;  // block while open, unblock on close
+	} else if (name == RE::RaceSexMenu::MENU_NAME) {
+		// RaceMenu used to be blocked outright alongside loading screens, but it is
+		// not the same thing: it is a real jittered 3D scene, and it is the one
+		// place a player studies a face closely, so the upscaler and the neural
+		// uplift are worth more here than almost anywhere else. What actually
+		// warped the image was dynamic resolution -- the sub-rect resolve does not
+		// line up when the scene is rendered smaller than its target -- and that
+		// only applies while we are downscaling. See ShouldBlockUpscaling.
+		raceMenuOpen = a_event->opening;
+		if (!a_event->opening) {
+			// Kept from the old branch: character creation at the start of a game
+			// is one of the paths that clears the main-menu block.
+			temporalFeaturesBlocked = false;
+		}
 	} else if (name == RE::FaderMenu::MENU_NAME) {
 		if (!a_event->opening) {
 			temporalFeaturesBlocked = false;
@@ -172,7 +186,14 @@ bool Upscaling::ShouldBlockTemporalFeatures() const
 
 bool Upscaling::ShouldBlockUpscaling() const
 {
-	return ShouldBlockTemporalFeatures();
+	if (ShouldBlockTemporalFeatures()) {
+		return true;
+	}
+	// RaceMenu only needs blocking when we are actually rendering below the
+	// target; at native scale there is no sub-rect to misalign, so the upscaler,
+	// Ray Reconstruction and the uplift all run and the face is shown the way it
+	// will look in game.
+	return raceMenuOpen && SettingsStore::GetSingleton()->settings.qualityMode != 0;
 }
 
 bool Upscaling::IsSteamOverlayLoaded()

@@ -451,8 +451,13 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 	// and the matching hudless is the pre-UI capture of it, which
 	// DX12SwapChain::GetDLSSGHudlessSource supplies. Plain copy-back at the old
 	// hook point satisfies neither and stays excluded.
+	// Not in RaceMenu. The upscaler and the uplift now run there, but frame
+	// generation is a different risk: a menu that freezes the world produces the
+	// long frames that preceded the one GPU hang this project has seen, and
+	// nobody needs interpolated frames while dragging a nose slider.
 	const bool sceneCompleteHook = s.upscalerHookPoint == 1;
 	const bool want = Upscaling::kEnableDLSSG && !Upscaling::IsFrameGenerationBlockedByOverlay() &&
+	                  !up->raceMenuOpen &&
 	                  (presentOverride || sceneCompleteHook) && IsActive() && method == 2 && sl->featureDLSSG &&
 		s.frameGenerationMode != 0 && !DX12SwapChain::GetSingleton()->IsDLSSGAutoDisabled();
 	sl->UpdateReflex(want ? (s.reflexMode == 0 ? 1u : s.reflexMode) : s.reflexMode, want);
