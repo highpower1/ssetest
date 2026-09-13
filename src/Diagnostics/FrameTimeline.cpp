@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <d3d11.h>
+#include <winrt/base.h>
 #include <detours/Detours.h>
 #include <unordered_map>
 
@@ -82,16 +83,68 @@ namespace FrameTimeline
 		if (g_installed) {
 			return;
 		}
-		auto* context = Game::GetD3D11Context();
-		if (!context) {
-			logger::warn("[FrameTimeline] No D3D11 context yet; timeline capture unavailable");
-			return;
+
+		// The first attempt hooked the context captured at device creation and saw
+		// a handful of binds a frame, all of them kFRAMEBUFFER -- the whole world
+		// render went somewhere else. Under ENB the object the game was handed and
+		// the object the renderer actually draws on need not be the same, so
+		// collect every context we can reach and hook each distinct vtable. A
+		// vtable is shared by all instances of a class, so hooking one catches
+		// every context of that type, including ENB's own calls.
+		std::array<std::pair<const char*, ID3D11DeviceContext*>, 3> candidates{};
+		candidates[0] = { "captured at device creation", Game::GetD3D11Context() };
+
+		winrt::com_ptr<ID3D11DeviceContext> immediate;
+		if (auto* device = Game::GetD3D11Device()) {
+			device->GetImmediateContext(immediate.put());
+			candidates[1] = { "device->GetImmediateContext", immediate.get() };
 		}
-		*reinterpret_cast<uintptr_t*>(&hkOMSetRenderTargets::func) =
-			Detours::X64::DetourClassVTable(*reinterpret_cast<uintptr_t*>(context),
-				&hkOMSetRenderTargets::thunk, kOMSetRenderTargetsVTableIndex);
-		g_installed = hkOMSetRenderTargets::func != nullptr;
-		logger::info("[FrameTimeline] OMSetRenderTargets hook {}", g_installed ? "installed" : "FAILED");
+
+		if (auto* data = RE::BSGraphics::Renderer::GetRendererData()) {
+			if (auto* rendererContext = reinterpret_cast<ID3D11DeviceContext*>(data->context)) {
+				candidates[2] = { "BSGraphics renderer data", rendererContext };
+			}
+		}
+
+		std::array<uintptr_t, 3> hookedVTables{};
+		uint32_t                 hookedCount = 0;
+		for (const auto& [label, context] : candidates) {
+			if (!context) {
+				continue;
+			}
+			const auto vtable = *reinterpret_cast<uintptr_t*>(context);
+			logger::info("[FrameTimeline] Context candidate '{}' = {} vtable=0x{:X}",
+				label, static_cast<void*>(context), vtable);
+
+			const bool already = std::find(hookedVTables.begin(), hookedVTables.begin() + hookedCount, vtable) !=
+			                     hookedVTables.begin() + hookedCount;
+			if (already) {
+				logger::info("[FrameTimeline]   same vtable as one already hooked; skipping");
+				continue;
+			}
+
+			auto* original = reinterpret_cast<decltype(&hkOMSetRenderTargets::thunk)>(
+				Detours::X64::DetourClassVTable(vtable, &hkOMSetRenderTargets::thunk, kOMSetRenderTargetsVTableIndex));
+			if (!original) {
+				logger::warn("[FrameTimeline]   hook FAILED");
+				continue;
+			}
+			// Every hooked vtable forwards to the same original, which is correct
+			// only while they really are the same function. They are not
+			// necessarily, so keep the first and say so if a later one differs.
+			if (hkOMSetRenderTargets::func && hkOMSetRenderTargets::func != original) {
+				logger::warn("[FrameTimeline]   original differs from the first hook; forwarding may be wrong, "
+							 "not hooking this one");
+				Detours::X64::DetourClassVTable(vtable, original, kOMSetRenderTargetsVTableIndex);
+				continue;
+			}
+			hkOMSetRenderTargets::func = original;
+			hookedVTables[hookedCount++] = vtable;
+			logger::info("[FrameTimeline]   hooked");
+		}
+
+		g_installed = hookedCount > 0;
+		logger::info("[FrameTimeline] OMSetRenderTargets hooked on {} distinct vtable(s)", hookedCount);
 	}
 
 	void Arm()
