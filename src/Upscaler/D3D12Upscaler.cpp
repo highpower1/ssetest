@@ -706,6 +706,16 @@ void D3D12Upscaler::Evaluate()
 	const bool upscaling = renderScale < 0.999f;
 	const bool active = IsActive();
 
+	// Whether the upscaler runs at all keeps turning out to be the answer to
+	// "why does it look different in the menu". Say when it flips and why, so
+	// that question is answered by the log instead of by inference.
+	if (active != loggedActiveState) {
+		loggedActiveState = active;
+		logger::info("[D3D12Upscaler] Pipeline {} (ready={} blocked={} method={} dlssAvailable={}). "
+					 "While inactive the game's own frame is presented untouched.",
+			active ? "ACTIVE" : "INACTIVE", ready, blocked, method, dlssAvailable);
+	}
+
 	// Engine TAA: off while actively upscaling (so it can't touch the low-res
 	// scene before our resolve), restored to the player's setting otherwise.
 	const bool wantTAAOff = active && upscaling;

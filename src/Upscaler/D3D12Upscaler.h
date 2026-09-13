@@ -201,6 +201,7 @@ private:
 	bool     transparencyHint = true;
 	bool     presentOverride = true;
 	ID3D12Resource* loggedCopyBackSource = nullptr;
+	bool     loggedActiveState = false;
 	bool     loggedTransparencyMismatch = false;
 	uint32_t pendingDisplayWidth = 0;
 	uint32_t pendingDisplayHeight = 0;
