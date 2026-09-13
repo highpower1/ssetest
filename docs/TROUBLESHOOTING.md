@@ -77,6 +77,18 @@ Two inputs the reference implementation supplies are still missing here: the
 explicit `DLSSNR.JitterOffset` parameters (jitter is currently folded into where
 the guides are sampled instead) and the UI correction buffers.
 
+## Crash in gameoverlayrenderer64.dll
+
+The Steam overlay hooks Present per swapchain. DLSS-G presents from its own
+worker thread, and the overlay dereferences state it never set up for that path,
+so the call stack ends in an access violation inside `gameoverlayrenderer64.dll`
+below `sl.dlss_g.dll`.
+
+Frame generation is therefore disabled whenever the overlay is loaded, and the
+log says so at startup. To use frame generation, turn the overlay off for
+Skyrim: **Steam → Skyrim Special Edition → Properties → General → In-Game
+Overlay**.
+
 ## Known limitations
 
 - **Changing resolution mid-session.** The shared textures are allocated once at

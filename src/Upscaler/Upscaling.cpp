@@ -128,9 +128,25 @@ bool Upscaling::ShouldBlockUpscaling() const
 	return ShouldBlockTemporalFeatures();
 }
 
+bool Upscaling::IsSteamOverlayLoaded()
+{
+	// Resolved once: the overlay is injected at process start and never unloads.
+	static const bool loaded = [] {
+		const bool present = GetModuleHandleW(L"gameoverlayrenderer64.dll") != nullptr;
+		if (present) {
+			logger::warn(
+				"[Upscaling] The Steam overlay is loaded, so frame generation is disabled. DLSS-G presents "
+				"from its own thread and the overlay faults on that path. To use frame generation, turn the "
+				"Steam overlay off for Skyrim (Properties -> General -> In-Game Overlay).");
+		}
+		return present;
+	}();
+	return loaded;
+}
+
 bool Upscaling::ShouldBlockFrameGeneration() const
 {
-	return ShouldBlockTemporalFeatures() || !dlssgMenuResumeReady;
+	return ShouldBlockTemporalFeatures() || !dlssgMenuResumeReady || IsSteamOverlayLoaded();
 }
 
 bool Upscaling::IsFeatureRequestBlocked(FeatureRequest) const

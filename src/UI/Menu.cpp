@@ -191,7 +191,14 @@ namespace
 		if constexpr (!Upscaling::kEnableDLSSG) {
 			ImGuiMCP::TextWrapped("Frame Generation is temporarily disabled by the driver-safety gate.");
 		}
-		ImGuiMCP::BeginDisabled(upscalingDisabled || !Upscaling::kEnableDLSSG);
+		const bool steamOverlay = Upscaling::IsSteamOverlayLoaded();
+		if (steamOverlay) {
+			ImGuiMCP::TextWrapped(
+				"Frame Generation is disabled because the Steam overlay is loaded: DLSS-G presents from its "
+				"own thread and the overlay faults on that path. Turn the overlay off for Skyrim in "
+				"Properties -> General -> In-Game Overlay.");
+		}
+		ImGuiMCP::BeginDisabled(upscalingDisabled || !Upscaling::kEnableDLSSG || steamOverlay);
 		static constexpr std::array frameGenerationModes{ "Disabled", "On", "Auto" };
 		changed |= ComboSetting(
 			"Frame Generation",

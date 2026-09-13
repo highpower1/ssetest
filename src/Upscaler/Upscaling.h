@@ -76,6 +76,11 @@ public:
 	UpscaleMethod GetUpscaleMethod(bool a_checkMenu);
 	bool          ShouldBlockUpscaling() const;
 	bool          ShouldBlockFrameGeneration() const;
+	// The Steam overlay hooks Present per swapchain, but DLSS-G presents from its
+	// own worker thread, and the overlay dereferences state it never set up for
+	// that path -- an access violation inside gameoverlayrenderer64.dll. Frame
+	// generation is refused while the overlay is loaded.
+	static bool   IsSteamOverlayLoaded();
 	bool          ShouldUseFrameGeneration(bool a_checkMenu);
 	bool          ShouldUseFSRFrameGeneration(bool a_checkMenu);
 

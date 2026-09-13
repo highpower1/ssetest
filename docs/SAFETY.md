@@ -11,6 +11,11 @@ should not be removed casually.
 
 ## What protects you
 
+**Refusing to run beside the Steam overlay.** The overlay's Present hook faults
+when DLSS-G presents from its own thread. Frame generation is disabled while
+`gameoverlayrenderer64.dll` is loaded rather than left to crash.
+
+
 **A present watchdog.** `DX12SwapChain` times each Present call. Two consecutive
 calls over 80 ms, or an outright failed present, latch frame generation off for
 the rest of the session and log why. Restart the game to try again.
