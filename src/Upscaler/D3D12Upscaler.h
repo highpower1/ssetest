@@ -200,6 +200,7 @@ private:
 	std::size_t loggedNeuralConfig = 0;
 	bool     transparencyHint = true;
 	bool     presentOverride = true;
+	ID3D12Resource* loggedCopyBackSource = nullptr;
 	bool     loggedTransparencyMismatch = false;
 	uint32_t pendingDisplayWidth = 0;
 	uint32_t pendingDisplayHeight = 0;

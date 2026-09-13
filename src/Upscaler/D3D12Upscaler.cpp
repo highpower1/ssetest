@@ -1196,6 +1196,32 @@ void D3D12Upscaler::Evaluate()
 			}
 		}
 
+		// The copy-back path below hands D3D11 colorOutput's shared texture, but
+		// the passes that run after the upscaler -- NIS sharpen, and the uplift
+		// when it runs after upscaling -- write their own D3D12-only targets and
+		// leave colorOutput holding the un-sharpened, un-uplifted image. On the
+		// present-override path that is harmless because present reads
+		// GetHudlessColor12() directly; on copy-back it silently discarded both.
+		// Fold the real result back into the shared texture so the copy carries it.
+		if (ok && !presentOverride && colorOutput) {
+			auto* finalColor = GetHudlessColor12();
+			auto* shared = colorOutput->resource12.get();
+			if (finalColor && shared && finalColor != shared) {
+				Transition(commandList.get(), finalColor, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+				Transition(commandList.get(), shared, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+				commandList->CopyResource(shared, finalColor);
+				Transition(commandList.get(), shared, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
+				Transition(commandList.get(), finalColor, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+				if (finalColor != loggedCopyBackSource) {
+					loggedCopyBackSource = finalColor;
+					logger::info("[D3D12Upscaler] Copy-back source is {} ({})",
+						static_cast<const void*>(finalColor),
+						finalColor == neuralColor.get() ? "uplift target" :
+							finalColor == sharpenedColor.get() ? "sharpened" : "unknown");
+				}
+			}
+		}
+
 		stage = "close list (frame work)";
 		DX::ThrowIfFailed(commandList->Close());
 		ID3D12CommandList* lists[] = { commandList.get() };
