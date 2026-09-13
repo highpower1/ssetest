@@ -8,6 +8,10 @@ thing to fix — no other symptom is worth diagnosing until one of them is gone.
 In most cases, the logs are located here.
 `Documents/My Games/Skyrim Special Edition/SKSE/SkyrimUpscaler.log`.
 
+This page assumes you are willing to read a log and a render-target dump. If you
+just installed the mod and something is not working, [FAQ.md](FAQ.md) covers the
+same ground without any of that.
+
 ## Reading a healthy startup
 
 ```

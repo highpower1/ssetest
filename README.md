@@ -89,6 +89,7 @@ xmake build SkyrimUpscaler
 
 ## Documentation
 
+- [docs/FAQ.md](docs/FAQ.md) — **start here if you are installing this, not building it**
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the renderer interposition works, and why
 - [docs/BUILDING.md](docs/BUILDING.md) — toolchain, dependencies, targets
 - [docs/NEURAL_MODULES.md](docs/NEURAL_MODULES.md) — writing an external neural rendering DLL
