@@ -198,18 +198,36 @@ float3 PQToLinear(float3 c)
 	return pow(max(e - c1, 0.0f) / (c2 - c3 * e), 1.0f / m1);
 }
 
+// Anything not finite that leaves this pass becomes square blocks on screen.
+// The game's bloom and lens-flare chains downsample the target we write, and a
+// single NaN poisons the whole tile it lands in -- which is why the symptom
+// appears around the sun and open flames and nowhere else: those are the only
+// places bright enough to produce one. The sRGB and PQ encodings are bounded by
+// construction; plain linear is not, and Skyrim's scene values there are
+// unbounded HDR.
+float3 Sanitise(float3 c, float ceiling)
+{
+	c.r = isfinite(c.r) ? c.r : 0.0f;
+	c.g = isfinite(c.g) ? c.g : 0.0f;
+	c.b = isfinite(c.b) ? c.b : 0.0f;
+	return clamp(c, 0.0f, ceiling);
+}
+
 float4 PSMain(PSInput input) : SV_TARGET
 {
 	const float4 source = Source.Load(int3(int2(input.position.xy), 0));
 	const bool  decode = Codec.x > 0.5f;
 	const uint  encoding = (uint)Codec.y;
 	const float whiteScale = max(Codec.z, 1e-6f);
+	const float ceiling = max(Codec.w, 1.0f);
 
 	float3 c = source.rgb;
 	if (!decode) {
 		// Scene linear -> the model's space. whiteScale maps the scene value that
 		// means "diffuse white" onto 1.0 (or onto its nits fraction, for PQ).
-		c = max(c, 0.0f) * whiteScale;
+		// Bounded before the model sees it, not only after: feeding an infinity in
+		// is a good way to get one back.
+		c = Sanitise(max(c, 0.0f) * whiteScale, ceiling);
 		if (encoding == 1u) {
 			c = LinearToSRGB(c);
 		} else if (encoding == 2u) {
@@ -221,7 +239,7 @@ float4 PSMain(PSInput input) : SV_TARGET
 		} else if (encoding == 2u) {
 			c = PQToLinear(c);
 		}
-		c = max(c, 0.0f) / whiteScale;
+		c = Sanitise(max(c, 0.0f) / whiteScale, ceiling);
 	}
 	return float4(c, source.a);
 }
@@ -641,7 +659,8 @@ bool D3D12NeuralGBuffer::RunUpliftCodec(
 	std::uint32_t              a_height,
 	bool                       a_decode,
 	UpliftEncoding             a_encoding,
-	float                      a_diffuseWhiteNits)
+	float                      a_diffuseWhiteNits,
+	float                      a_sceneCeiling)
 {
 	if (!a_device || !a_commandList || !a_source || !a_destination || a_width == 0 || a_height == 0) {
 		return false;
@@ -661,6 +680,10 @@ bool D3D12NeuralGBuffer::RunUpliftCodec(
 	// fraction of that. The relative encodings put diffuse white at 1.0, and the
 	// nits value only says which of them was intended.
 	params.codec[2] = a_encoding == UpliftEncoding::kPQ ? (a_diffuseWhiteNits / 10000.0f) : 1.0f;
+	// Ceiling for the sanitise step. Generous enough that nothing in a Skyrim
+	// scene reaches it -- the sun is a few hundred in linear -- and finite enough
+	// that a value which escapes the model cannot poison the bloom downsamples.
+	params.codec[3] = a_sceneCeiling;
 
 	Transition(a_commandList, a_source, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	Transition(a_commandList, a_destination, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -718,7 +741,8 @@ bool D3D12NeuralGBuffer::EncodeForUplift(
 		return false;
 	}
 	return RunUpliftCodec(a_device, a_commandList, a_sceneColor, upliftEncoded.get(),
-		kRTVUpliftEncoded, kSRVUpliftEncodeSrc, a_width, a_height, false, a_encoding, a_diffuseWhiteNits);
+		kRTVUpliftEncoded, kSRVUpliftEncodeSrc, a_width, a_height, false, a_encoding, a_diffuseWhiteNits,
+		kSceneCeiling);
 }
 
 bool D3D12NeuralGBuffer::DecodeFromUplift(
@@ -749,7 +773,8 @@ bool D3D12NeuralGBuffer::DecodeFromUplift(
 	}
 
 	return RunUpliftCodec(a_device, a_commandList, upliftResult.get(), a_destination,
-		kRTVUpliftDecodeDst, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits);
+		kRTVUpliftDecodeDst, kSRVUpliftDecodeSrc, a_width, a_height, true, a_encoding, a_diffuseWhiteNits,
+		kSceneCeiling);
 }
 
 bool D3D12NeuralGBuffer::RenderUpliftDifference(

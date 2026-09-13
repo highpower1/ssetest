@@ -159,6 +159,12 @@ public:
 	static constexpr float kAlbedo = 1.0f;          // white => demodulation is identity
 	static constexpr float kSpecularAlbedo = 0.0f;  // black => no specular lobe
 
+	// Upper bound applied to the uplift's input and output. Skyrim's linear
+	// scene peaks in the hundreds, so this changes nothing that belongs in the
+	// image; it exists so a value the model returns cannot reach the game's
+	// bloom downsamples as an infinity and take a tile with it.
+	static constexpr float kSceneCeiling = 4096.0f;
+
 private:
 	// Shared body of EncodeForUplift / DecodeFromUplift.
 	bool RunUpliftCodec(
@@ -172,7 +178,8 @@ private:
 		std::uint32_t              a_height,
 		bool                       a_decode,
 		UpliftEncoding             a_encoding,
-		float                      a_diffuseWhiteNits);
+		float                      a_diffuseWhiteNits,
+		float                      a_sceneCeiling);
 
 	bool EnsureResources(ID3D12Device* a_device, std::uint32_t a_width, std::uint32_t a_height);
 
