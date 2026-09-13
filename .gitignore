@@ -6,7 +6,7 @@
 *.user
 *.pdb
 
-# third-party SDKs / vendored deps (placed manually — see PORTING.md / CODEX_HANDOFF.md)
+# third-party SDKs / vendored deps (placed manually - see docs/BUILDING.md)
 /extern/Streamline/
 /extern/FidelityFX-SDK/
 /lib/commonlibsse-ng/

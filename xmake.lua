@@ -40,19 +40,16 @@ target("SkyrimUpscaler")
     add_packages("directxtk", "directx-headers", "magic_enum", "simpleini")
 
     -- =======================================================================
-    -- FOUNDATION build set.
-    -- Compiles against CommonLibSSE-NG + Detours + D3D only. This is the
-    -- ported, buildable skeleton: SKSE entry, renderer capture, ENB probe and
-    -- the neural external-module loader.
+    -- Plugin sources. The render backend under src/Render/ is listed explicitly
+    -- rather than globbed, so adding a file is a deliberate act.
     -- =======================================================================
     add_files(
         "src/main.cpp",
         "src/Diagnostics/Probe.cpp",
         "src/Game/Renderer.cpp",
         "src/Game/Util.cpp",
-        -- Full D3D11 hook (device capture + optional D3D12 proxy swapchain for
-        -- frame generation, gated by Upscaling::kFrameGenExperiment). Replaces
-        -- the minimal src/Hooks/DX11Hooks.cpp.
+        -- Device capture plus the IDXGIFactory::CreateSwapChain hook that
+        -- installs the D3D12 proxy swapchain (see docs/ARCHITECTURE.md).
         "src/Render/DX11Hooks.cpp",
         "src/Neural/NeuralRendering.cpp",
         -- DLSS 5 Neural Rendering ("uplift"). Ported from jarari/fo4test branch
@@ -65,7 +62,7 @@ target("SkyrimUpscaler")
         "src/Upscaler/Upscaling.cpp",
         "src/Upscaler/D3D12Upscaler.cpp",
         "src/UI/Menu.cpp",
-        -- render backend (incremental): Streamline (DLSS) + FidelityFX (FSR)
+        -- render backend: Streamline (DLSS / DLSS-G / RR) + FidelityFX (FSR)
         "src/Render/Streamline.cpp",
         "src/Render/FidelityFX.cpp",
         "src/Render/D3D12UIComposite.cpp",
@@ -97,24 +94,6 @@ target("SkyrimUpscaler")
     add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/framegeneration/include")
     add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/framegeneration/include/dx12")
     set_pcxxheader("src/PCH.h")
-
-    -- =======================================================================
-    -- RENDER BACKEND (Streamline / FidelityFX / DX12 proxy swapchain).
-    -- These files are copied verbatim from the Fallout 4 project under
-    -- src/Render/ as the porting base. Enable them once you have:
-    --   1. placed the Streamline and FidelityFX SDKs under extern/, and
-    --   2. ported src/Game/Util + src/Game/Upscaling (see PORTING.md).
-    -- =======================================================================
-    -- add_files("src/Render/**.cpp")
-    -- add_includedirs("extern/Streamline/include")
-    -- add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/api/include")
-    -- add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/backend/dx12")
-    -- add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/upscalers/include")
-    -- add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/framegeneration/include")
-    -- add_includedirs("extern/FidelityFX-SDK/Kits/FidelityFX/framegeneration/include/dx12")
-    -- add_linkdirs("extern/FidelityFX-SDK/Kits/FidelityFX/signedbin", { public = false })
-    -- add_links("amd_fidelityfx_loader_dx12", "delayimp")
-    -- add_shflags("/DELAYLOAD:amd_fidelityfx_loader_dx12.dll", { force = true })
 
     -- bcrypt: RTX40MFG-Unlock SHA-256-verifies each module before patching it.
     add_links("d3d11", "d3d12", "d3dcompiler", "dxgi", "gdi32", "bcrypt")

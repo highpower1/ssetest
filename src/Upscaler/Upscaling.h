@@ -15,9 +15,9 @@
 //     CommonLibSSE-NG with no game-offset dependency, and
 //   * a GPU BODY (render-target scaling, depth/motion-vector prep, DLSS/FSR
 //     evaluation, ~8000 lines) that is driven by the render backend
-//     (src/Render/) and by Fallout-4-specific engine hooks. That body, and the
-//     Address-Library-ID hook table in InstallHooks(), are the remaining
-//     in-game reverse-engineering work (see PORTING.md).
+//     (src/Render/). On Skyrim that body lives in src/Upscaler/D3D12Upscaler,
+//     which owns the interop device and runs the per-frame evaluation; the hook
+//     table is in src/Hooks/UpscalerHooks.cpp.
 //
 // To keep the buildable foundation green, the orchestration here talks to the
 // backend through plain availability flags (featureDLSS / featureDLSSG /
@@ -83,9 +83,12 @@ public:
 	bool IsFSRFrameGenerationActive() const { return fsrFrameGenerationActive; }
 
 	// ---- GPU body (driven by the DX12 proxy swapchain) -------------------
-	// STUBS for now: the D3D12 evaluation / tagging bodies are the remaining
-	// large port of the FO4 Upscaling GPU code. They currently no-op so the
-	// render backend links; wiring them up is the next milestone (PORTING.md).
+	// TagDLSSGInputs and GetTaggedTextureDebugResources are live. The three
+	// Evaluate* entry points are inherited from the Fallout 4 interface and
+	// return false: on Skyrim the upscaler evaluation lives in D3D12Upscaler
+	// instead, and the render backend only links against these. The exception is
+	// EvaluateFSRFrameGeneration, which is a genuine gap -- FSR frame generation
+	// is not implemented (see docs/TROUBLESHOOTING.md).
 	bool EvaluateD3D12DLSS(ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex);
 	bool EvaluateD3D12FSR(ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex);
 	bool EvaluateFSRFrameGeneration(ID3D12GraphicsCommandList* a_commandList, uint32_t a_frameIndex);

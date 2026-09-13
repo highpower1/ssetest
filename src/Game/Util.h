@@ -47,8 +47,9 @@ namespace Util
 
 	// Candidate set of main-scene render targets to recreate at render
 	// resolution while upscaling. Grounded in the AE 1.6.1170 dump (these are
-	// the full-res scene targets); the DEFINITIVE set must still be confirmed
-	// in-game with RenderDoc once the render-pipeline hooks exist (PORTING.md).
+	// the full-res scene targets). Unused by the shipping path, which drives the
+	// engine's own dynamic-resolution scale instead of recreating targets; kept
+	// for the render-target-replacement approach should it ever be needed.
 	inline constexpr RE::RENDER_TARGET kScaledRenderTargets[] = {
 		RE::RENDER_TARGET::kMAIN,
 		RE::RENDER_TARGET::kMAIN_COPY,

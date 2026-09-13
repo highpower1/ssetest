@@ -13,11 +13,9 @@
 //
 // Two capabilities, per the project brief:
 //
-//  (A) DLSS Ray Reconstruction (a.k.a. "DLSS-D", the neural denoiser). The
-//      Streamline runtime DLLs for this ship with the project (sl.dlss_d.dll /
-//      nvngx_dlssd.dll, and the ray-reconstruction model nvngx_dlssnr.dll).
-//      This module owns the RR options and requests it through the Streamline
-//      wrapper once the render backend (src/Render/Streamline.cpp) is wired in.
+//  (A) DLSS Ray Reconstruction ("DLSS-D", the neural denoiser), which needs
+//      sl.dlss_d.dll and nvngx_dlssd.dll in the Streamline folder. This module
+//      only carries its on/off setting.
 //
 //  (B) A generic external-DLL loader that discovers "RenoDX-style" neural
 //      rendering DLLs dropped into
@@ -26,9 +24,10 @@
 //      on top of RenoDX (or any custom neural post-process) inject itself into
 //      the frame without recompiling this plugin.
 //
-// The loader (B) is fully implemented here. The RR path (A) is scaffolded and
-// documented; its GPU evaluation is completed alongside the Streamline backend
-// port (see PORTING.md).
+// The loader (B) lives here. Ray Reconstruction (A) is driven by the render
+// backend: Streamline requests the feature, src/Render/D3D12NeuralGBuffer
+// synthesises the guides Skyrim does not have, and D3D12Upscaler evaluates it.
+// This module only carries the settings.
 // ===========================================================================
 
 // The module ABI itself lives in a standalone public header so DLL authors can

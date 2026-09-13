@@ -109,7 +109,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	}
 
 	DX11Hooks::Install();
-	Upscaling::InstallHooks();  // engine render-pipeline hooks (scaffold; see PORTING.md)
+	Upscaling::InstallHooks();  // engine render-pipeline hooks (src/Hooks/UpscalerHooks.cpp)
 
 	if (auto* messaging = SKSE::GetMessagingInterface()) {
 		messaging->RegisterListener(OnMessage);
