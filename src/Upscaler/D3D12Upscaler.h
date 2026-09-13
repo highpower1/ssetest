@@ -109,6 +109,11 @@ private:
 	bool CreateCommandInfrastructure();
 	bool CreateSharedFence();
 	bool CreateSharedTextures(uint32_t a_width, uint32_t a_height);
+	// The interop textures are sized to the display. Everything downstream sizes
+	// itself from them -- the neural guides and the DLSS-G per-index copies both
+	// compare against their descriptions -- so recreating these is what makes a
+	// resolution change take effect without restarting the game.
+	bool RecreateForDisplaySize(uint32_t a_width, uint32_t a_height);
 	// Configure/enable DLSS-G for this frame (Reflex + slDLSSGSetOptions) based on
 	// the live settings; sets Upscaling::frameGenerationActive. Called from
 	// Evaluate after a successful upscale (frame-gen experiment only).
@@ -187,6 +192,8 @@ private:
 	ID3D12Resource* resolvedSceneColor = nullptr;
 	ID3D12Resource* loggedPresentOverride = nullptr;
 	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
+	uint32_t pendingDisplayWidth = 0;
+	uint32_t pendingDisplayHeight = 0;
 	uint32_t neuralFramesTotal = 0;
 	uint32_t neuralFramesActive = 0;
 

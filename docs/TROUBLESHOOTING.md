@@ -110,8 +110,6 @@ the search before either of the above is needed.
 
 ## Known limitations
 
-- **Changing resolution mid-session.** The shared textures are allocated once at
-  startup. Restart the game after changing resolution.
 - **FSR frame generation is not implemented.** `EvaluateFSRFrameGeneration` is a
   stub; only DLSS-G generates frames.
 - **No transparency or reactive mask.** Both are passed as null, so particles,

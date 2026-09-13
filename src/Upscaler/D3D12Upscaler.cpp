@@ -12,6 +12,8 @@
 #include "Settings/Settings.h"
 #include "Upscaler/Upscaling.h"  // kFrameGenExperiment
 
+#include <utility>
+
 namespace
 {
 	D3D11_TEXTURE2D_DESC MakeInteropDesc(uint32_t a_width, uint32_t a_height, DXGI_FORMAT a_format)
@@ -131,6 +133,62 @@ bool D3D12Upscaler::CreateSharedTextures(uint32_t a_width, uint32_t a_height)
 		logger::error("[D3D12Upscaler] Shared texture creation failed: {}", e.what());
 		return false;
 	}
+	return true;
+}
+
+bool D3D12Upscaler::RecreateForDisplaySize(uint32_t a_width, uint32_t a_height)
+{
+	if (a_width == 0 || a_height == 0 || !d3d12Device || !commandQueue) {
+		return false;
+	}
+
+	logger::info("[D3D12Upscaler] Display size changed {}x{} -> {}x{}; rebuilding interop resources",
+		displayWidth, displayHeight, a_width, a_height);
+
+	// Nothing may still be reading the textures about to be released. The present
+	// queue holds a reference to the override, and DLSS-G copies from these on
+	// its own queue, so drop that reference and drain before releasing anything.
+	auto* swapChain = DX12SwapChain::GetSingleton();
+	swapChain->SetPresentOverride(nullptr);
+	Streamline::GetSingleton()->RequestDLSSGDisable();
+
+	if (FAILED(commandQueue->Signal(fence.get(), ++fenceValue))) {
+		logger::error("[D3D12Upscaler] Could not signal the fence for a resize drain");
+		return false;
+	}
+	if (fence->GetCompletedValue() < fenceValue) {
+		if (FAILED(fence->SetEventOnCompletion(fenceValue, fenceEvent.get())) ||
+			WaitForSingleObjectEx(fenceEvent.get(), 5000, FALSE) != WAIT_OBJECT_0) {
+			logger::critical("[D3D12Upscaler] Resize drain did not complete; leaving the old resources in place");
+			return false;
+		}
+	}
+
+	neuralColorReady = nullptr;
+	resolvedSceneColor = nullptr;
+	neuralColor = nullptr;
+	neuralColorRTVHeap = nullptr;
+	sharpenedColor = nullptr;
+	colorInput.reset();
+	colorOutput.reset();
+	motionVectors.reset();
+	depth.reset();
+	// The guide buffers key off the display size too; make them rebuild.
+	D3D12NeuralGBuffer::GetSingleton()->Reset();
+
+	displayWidth = a_width;
+	displayHeight = a_height;
+
+	if (!CreateSharedTextures(displayWidth, displayHeight)) {
+		logger::critical("[D3D12Upscaler] Could not recreate interop textures at {}x{}; disabling the upscaler",
+			displayWidth, displayHeight);
+		ready = false;
+		return false;
+	}
+
+	// History from the previous resolution is meaningless now.
+	Streamline::GetSingleton()->RequestTemporalReset();
+	logger::info("[D3D12Upscaler] Interop resources rebuilt at {}x{}", displayWidth, displayHeight);
 	return true;
 }
 
@@ -424,6 +482,14 @@ void D3D12Upscaler::UpdateFromSettings()
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
 	neuralDebugDifference = s.dlssNRDebugDifference != 0;
+	// Picked up by Evaluate, which is the only place the queue is known idle.
+	if (const auto* state = RE::BSGraphics::State::GetSingleton()) {
+		if (state->screenWidth != 0 && state->screenHeight != 0 &&
+			(state->screenWidth != displayWidth || state->screenHeight != displayHeight)) {
+			pendingDisplayWidth = state->screenWidth;
+			pendingDisplayHeight = state->screenHeight;
+		}
+	}
 	neuralDebugDifferenceGain = s.dlssNRDebugDifferenceGain;
 	neuralEncoding = std::min(s.dlssNREncoding, 2u);
 	neuralDiffuseWhiteNits = s.dlssNRDiffuseWhiteNits;
@@ -589,6 +655,17 @@ void D3D12Upscaler::Evaluate()
 		workFenceValue.store(0, std::memory_order_release);
 		Streamline::GetSingleton()->RequestDLSSGDisable();
 		return;
+	}
+
+	// Act on a resolution change here rather than where it was noticed: this runs
+	// before any of the frame's work is recorded, and the drain inside is the only
+	// safe point to release textures the present queue may still be reading.
+	if (pendingDisplayWidth != 0 && pendingDisplayHeight != 0) {
+		const auto width = std::exchange(pendingDisplayWidth, 0u);
+		const auto height = std::exchange(pendingDisplayHeight, 0u);
+		if (!RecreateForDisplaySize(width, height)) {
+			return;
+		}
 	}
 
 	// Capture the player's original engine-TAA state once, so we can restore it
