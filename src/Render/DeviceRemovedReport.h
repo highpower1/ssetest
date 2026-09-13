@@ -21,6 +21,16 @@ namespace DeviceRemovedReport
 	// on for a device that already exists.
 	void Enable();
 
+	// Also before device creation, and only when SkyrimUpscaler.ini sets
+	// D3D12DebugLayer=1. DRED reports GPU faults; it cannot see an invalid call
+	// the runtime rejects on the CPU, which is what makes Close fail. The debug
+	// layer names those, at a real cost in frame time, so it stays opt-in.
+	void EnableDebugLayerIfRequested();
+
+	// Log and clear whatever the debug layer has queued. Does nothing when the
+	// layer is off.
+	void DrainMessages(ID3D12Device* a_device, const char* a_context);
+
 	// Log the breadcrumbs and page-fault data for a device that has been
 	// removed. Safe to call on a live device (it simply reports nothing) and
 	// safe to call repeatedly -- only the first report per device is written.

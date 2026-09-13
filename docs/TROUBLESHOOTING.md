@@ -89,6 +89,25 @@ log says so at startup. To use frame generation, turn the overlay off for
 Skyrim: **Steam → Skyrim Special Edition → Properties → General → In-Game
 Overlay**.
 
+## Diagnosing a lost D3D12 device
+
+Two mechanisms report one, and they cover different halves.
+
+Device Removed Extended Data is always on. When the device is lost it logs the
+command queue and list, how many GPU operations completed, and the one that did
+not. Breadcrumb nodes and a non-zero page-fault address mean the GPU faulted.
+**No breadcrumbs and a page-fault address of zero mean the opposite**: nothing
+failed on the GPU, and the device was lost to an invalid call made on the CPU.
+
+For that second case, set `D3D12DebugLayer=1` in `SkyrimUpscaler.ini`. The
+runtime then validates every call and the failure log carries the validation
+message that names it. This costs real frame time, so set it back to 0 when
+finished, and it needs the Graphics Tools optional Windows feature -- the log
+says so if it is missing.
+
+`Evaluate failed at '<stage>'` names the last D3D call attempted, which narrows
+the search before either of the above is needed.
+
 ## Known limitations
 
 - **Changing resolution mid-session.** The shared textures are allocated once at

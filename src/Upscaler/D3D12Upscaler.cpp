@@ -718,37 +718,6 @@ void D3D12Upscaler::Evaluate()
 			nrParameters.inputWidth = nrParameters.outputWidth = nrParameters.guideWidth = nrWidth;
 			nrParameters.inputHeight = nrParameters.outputHeight = nrParameters.guideHeight = nrHeight;
 
-			if (nrAfterUpscale) {
-				// Running on the resolved image means the guides must match it:
-				// display resolution, and sampled where the jittered raster
-				// actually put each feature. Feeding the raw render-resolution
-				// buffers instead misaligns every guide by the sub-pixel jitter.
-				const auto* cameraFrame = Util::CameraFrame::GetSingleton();
-				const DirectX::XMFLOAT2 jitterPixels =
-					cameraFrame->useJitter ? cameraFrame->jitter : DirectX::XMFLOAT2{ 0.0f, 0.0f };
-				auto* guides = D3D12NeuralGBuffer::GetSingleton();
-				if (guides->GenerateUpliftGuides(
-						d3d12Device.get(), commandList.get(),
-						motionVectors->resource12.get(), depth->resource12.get(),
-						GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight,
-						jitterPixels)) {
-					nrParameters.motionVectors = guides->GetUpliftMotionVectors();
-					nrParameters.depth = guides->GetUpliftDepth();
-					// The resample already scaled motion into display pixels.
-					nrParameters.motionVectorScaleX = 1.0f;
-					nrParameters.motionVectorScaleY = 1.0f;
-				} else {
-					ReportNeuralFailure();
-					nrWanted = false;
-				}
-			} else {
-				nrParameters.motionVectors = motionVectors->resource12.get();
-				nrParameters.depth = depth->resource12.get();
-				// Skyrim's motion is normalised screen space (Streamline runs it at
-				// mvecScale 1,1); NGX wants pixels, so scale by the guide size.
-				nrParameters.motionVectorScaleX = static_cast<float>(nrWidth);
-				nrParameters.motionVectorScaleY = static_cast<float>(nrHeight);
-			}
 			nrParameters.depthInverted = false;
 			nrParameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 			nrParameters.reset = neuralRenderingSkipFrame;
@@ -788,6 +757,44 @@ void D3D12Upscaler::Evaluate()
 			} else if (neuralRenderingSkipFrame) {
 				neuralRenderingSkipFrame = false;
 				nrWanted = false;
+			}
+		}
+
+		// Guides are recorded only once the uplift is certain to run. Building
+		// them before the gating decision left a resample pass in the command list
+		// on every frame the uplift was skipped -- work nothing consumed, in a
+		// submission that then had to be valid on its own.
+		if (nrWanted) {
+			if (nrAfterUpscale) {
+				// Running on the resolved image means the guides must match it:
+				// display resolution, and sampled where the jittered raster
+				// actually put each feature. Feeding the raw render-resolution
+				// buffers instead misaligns every guide by the sub-pixel jitter.
+				const auto* cameraFrame = Util::CameraFrame::GetSingleton();
+				const DirectX::XMFLOAT2 jitterPixels =
+					cameraFrame->useJitter ? cameraFrame->jitter : DirectX::XMFLOAT2{ 0.0f, 0.0f };
+				auto* guides = D3D12NeuralGBuffer::GetSingleton();
+				if (guides->GenerateUpliftGuides(
+						d3d12Device.get(), commandList.get(),
+						motionVectors->resource12.get(), depth->resource12.get(),
+						GetRenderWidth(), GetRenderHeight(), displayWidth, displayHeight,
+						jitterPixels)) {
+					nrParameters.motionVectors = guides->GetUpliftMotionVectors();
+					nrParameters.depth = guides->GetUpliftDepth();
+					// The resample already scaled motion into display pixels.
+					nrParameters.motionVectorScaleX = 1.0f;
+					nrParameters.motionVectorScaleY = 1.0f;
+				} else {
+					ReportNeuralFailure();
+					nrWanted = false;
+				}
+			} else {
+				nrParameters.motionVectors = motionVectors->resource12.get();
+				nrParameters.depth = depth->resource12.get();
+				// Skyrim's motion is normalised screen space (Streamline runs it at
+				// mvecScale 1,1); NGX wants pixels, so scale by the guide size.
+				nrParameters.motionVectorScaleX = static_cast<float>(GetRenderWidth());
+				nrParameters.motionVectorScaleY = static_cast<float>(GetRenderHeight());
 			}
 		}
 
@@ -1063,6 +1070,7 @@ void D3D12Upscaler::Evaluate()
 			static_cast<uint32_t>(removedReason));
 		// Names the GPU operation that did not complete, which the HRESULT alone
 		// never does.
+		DeviceRemovedReport::DrainMessages(d3d12Device.get(), "Evaluate");
 		DeviceRemovedReport::Report(d3d12Device.get(), "D3D12Upscaler::Evaluate");
 		if (commandList) {
 			std::ignore = commandList->Close();

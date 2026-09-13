@@ -319,6 +319,7 @@ void DX12SwapChain::CreateD3D12Device(IDXGIAdapter* a_adapter, Streamline* a_str
 {
 	// Must precede device creation: DRED cannot be turned on retroactively, and a
 	// removed device otherwise reports only a reason code with no operation.
+	DeviceRemovedReport::EnableDebugLayerIfRequested();
 	DeviceRemovedReport::Enable();
 	DX::ThrowIfFailed(D3D12CreateDevice(a_adapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(d3d12Device.put())));
 

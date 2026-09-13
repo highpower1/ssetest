@@ -5,6 +5,8 @@
 #include <winrt/base.h>
 
 #include <atomic>
+#include <filesystem>
+#include <vector>
 
 namespace
 {
@@ -51,6 +53,69 @@ namespace
 				node->ObjectNameA ? node->ObjectNameA : "<unnamed>");
 		}
 	}
+}
+
+namespace
+{
+	bool g_debugLayerEnabled = false;
+
+	// Read straight from the ini: the device exists long before SettingsStore is
+	// loaded, so the usual settings path is not available yet.
+	bool DebugLayerRequested()
+	{
+		wchar_t moduleName[MAX_PATH]{};
+		HMODULE self = nullptr;
+		GetModuleHandleExW(
+			GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(&DebugLayerRequested), &self);
+		if (!self || GetModuleFileNameW(self, moduleName, MAX_PATH) == 0) {
+			return false;
+		}
+		const auto ini = std::filesystem::path(moduleName).parent_path() /
+		                 L"SkyrimUpscaler" / L"SkyrimUpscaler.ini";
+		return GetPrivateProfileIntW(L"General", L"D3D12DebugLayer", 0, ini.c_str()) != 0;
+	}
+}
+
+void DeviceRemovedReport::EnableDebugLayerIfRequested()
+{
+	if (!DebugLayerRequested()) {
+		return;
+	}
+	winrt::com_ptr<ID3D12Debug> debug;
+	if (FAILED(D3D12GetDebugInterface(IID_PPV_ARGS(debug.put())))) {
+		logger::warn("[D3D12] Debug layer requested but unavailable; install the Graphics Tools optional feature");
+		return;
+	}
+	debug->EnableDebugLayer();
+	g_debugLayerEnabled = true;
+	logger::warn("[D3D12] Debug layer ENABLED by SkyrimUpscaler.ini. This costs frame time; set D3D12DebugLayer=0 when finished.");
+}
+
+void DeviceRemovedReport::DrainMessages(ID3D12Device* a_device, const char* a_context)
+{
+	if (!g_debugLayerEnabled || !a_device) {
+		return;
+	}
+	winrt::com_ptr<ID3D12InfoQueue> queue;
+	if (FAILED(a_device->QueryInterface(IID_PPV_ARGS(queue.put())))) {
+		return;
+	}
+	const auto count = queue->GetNumStoredMessages();
+	for (UINT64 i = 0; i < count; ++i) {
+		SIZE_T length = 0;
+		if (FAILED(queue->GetMessage(i, nullptr, &length)) || length == 0) {
+			continue;
+		}
+		std::vector<std::byte> storage(length);
+		auto* message = reinterpret_cast<D3D12_MESSAGE*>(storage.data());
+		if (SUCCEEDED(queue->GetMessage(i, message, &length)) && message->pDescription) {
+			logger::critical("[D3D12] {}: severity={} id={} {}",
+				a_context, static_cast<int>(message->Severity),
+				static_cast<int>(message->ID), message->pDescription);
+		}
+	}
+	queue->ClearStoredMessages();
 }
 
 void DeviceRemovedReport::Enable()
