@@ -199,6 +199,7 @@ private:
 	uint32_t loggedNeuralDecision = 0xFFFFFFFF;
 	std::size_t loggedNeuralConfig = 0;
 	bool     transparencyHint = true;
+	bool     presentOverride = true;
 	bool     loggedTransparencyMismatch = false;
 	uint32_t pendingDisplayWidth = 0;
 	uint32_t pendingDisplayHeight = 0;

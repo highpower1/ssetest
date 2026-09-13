@@ -56,6 +56,13 @@ override. `kMAIN` is cleared to black so the game's own UI pass draws onto
 black, and `D3D12UIComposite` merges the two at present time: a pixel that is
 not black in the UI buffer is UI, everything else is the scene.
 
+That has a cost worth stating plainly: **ENB's post-processing runs on the
+cleared colour target, so it never touches the scene it is supposed to grade.**
+The scene reaches the screen as the upscaler produced it, without ENB's
+tonemapping, bloom or colour grading. `PresentOverride = 0` restores the older
+path -- copy the result back into `kMAIN`, let ENB do its work, and lose frame
+generation, which cannot pace a present it does not own.
+
 > The composite's coverage term must be derived from colour alone. Folding in
 > the UI buffer's alpha discards the entire scene: that buffer is a copy of an
 > opaque backbuffer, so its alpha is 1 at every pixel, coverage saturates, and

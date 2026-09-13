@@ -429,7 +429,9 @@ HRESULT D3D12Upscaler::SignalPresentInputsConsumed(ID3D12CommandQueue* a_present
 // composites (D3D12UIComposite) the DLSS scene + that UI. This gives DLSS-G a
 // coherent D3D12-native present it can pace (the round-trip did not). Off = the
 // stable kMAIN-round-trip path.
-static constexpr bool kPresentOverride = true;
+// Was a compile-time constant. It decides whether ENB's post-processing reaches
+// the upscaled scene at all, which turns out to be visible enough that it has to
+// be the player's choice rather than a build-time one.
 
 void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, float a_displayW, float a_displayH)
 {
@@ -441,8 +443,12 @@ void D3D12Upscaler::ConfigureFrameGeneration(float a_renderW, float a_renderH, f
 	// and in-world (IsActive). DLSS-G REQUIRES Reflex, so force Reflex on while
 	// generating (otherwise Streamline reports eFailReflexNotDetectedAtRuntime).
 	// Never re-arm after the present watchdog latched frame generation off.
+	// It also requires the present override: DLSS-G recovers the UI as
+	// backbuffer minus hudless, which only holds while the backbuffer is our
+	// composite. On the copy-back path the backbuffer is ENB's graded image and
+	// that subtraction produces garbage.
 	const bool want = Upscaling::kEnableDLSSG && !Upscaling::IsFrameGenerationBlockedByOverlay() &&
-	                  IsActive() && method == 2 && sl->featureDLSSG &&
+	                  presentOverride && IsActive() && method == 2 && sl->featureDLSSG &&
 		s.frameGenerationMode != 0 && !DX12SwapChain::GetSingleton()->IsDLSSGAutoDisabled();
 	sl->UpdateReflex(want ? (s.reflexMode == 0 ? 1u : s.reflexMode) : s.reflexMode, want);
 
@@ -479,6 +485,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	dlssPreset = s.dlssModelPreset;
 	sharpness = s.sharpness;
 	transparencyHint = s.transparencyHint != 0;
+	presentOverride = s.presentOverride != 0;
 	// Ray Reconstruction replaces DLSS super resolution with the DLSS-D denoiser.
 	// It is a DLSS-path-only option and needs the feature to have come up.
 	rayReconstruction = s.neuralRayReconstruction != 0 && Streamline::GetSingleton()->featureDLSSD;
@@ -1202,7 +1209,7 @@ void D3D12Upscaler::Evaluate()
 		DX::ThrowIfFailed(d3d11Context4->Wait(d3d11Fence.get(), workReadyValue));
 		if (ok) {
 			if constexpr (Upscaling::kFrameGenExperiment) {
-				if (kPresentOverride) {
+				if (presentOverride) {
 					// Keep the upscaled scene on D3D12 as the final present color,
 					// and clear kMAIN so the game draws UI-only onto black; the proxy
 					// present composites the two (D3D12UIComposite).

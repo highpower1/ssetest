@@ -52,6 +52,14 @@ public:
 		// default: the overlay faults on DLSS-G's present thread, which produced a
 		// reproducible access violation. Opt in only knowing that.
 		uint32_t frameGenWithSteamOverlay = 0;
+		// How the upscaled scene reaches the screen.
+		//   1 = present override: the scene stays on D3D12 and is composited with
+		//       the UI at present. Required for frame generation, but ENB's
+		//       post-processing runs on the cleared colour target and so never
+		//       touches the scene.
+		//   0 = copy the result back into the game's colour target, so ENB grades
+		//       and tonemaps it as usual. Frame generation cannot pace this.
+		uint32_t presentOverride = 1;
 
 		// Neural rendering (this project's additions)
 		uint32_t neuralRayReconstruction = 0; // DLSS-D / RR
