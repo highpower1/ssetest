@@ -45,6 +45,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "UpscaleMethod", settings.upscaleMethodPreference);
 	GetUInt(ini, "QualityMode", settings.qualityMode);
 	GetUInt(ini, "FrameGenerationMode", settings.frameGenerationMode);
+	GetUInt(ini, "FrameGenerationBackend", settings.frameGenerationBackend);
 	GetUInt(ini, "GeneratedFrames", settings.dlssgGeneratedFrames);
 	GetUInt(ini, "DynamicMFGEnabled", settings.dynamicMFGEnabled);
 	GetUInt(ini, "DynamicMFGTargetFPS", settings.dynamicMFGTargetFPS);
@@ -118,6 +119,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "UpscaleMethod", static_cast<long>(a_settings.upscaleMethodPreference));
 	ini.SetLongValue(kSection, "QualityMode", static_cast<long>(a_settings.qualityMode));
 	ini.SetLongValue(kSection, "FrameGenerationMode", static_cast<long>(a_settings.frameGenerationMode));
+	ini.SetLongValue(kSection, "FrameGenerationBackend", static_cast<long>(a_settings.frameGenerationBackend));
 	ini.SetLongValue(kSection, "GeneratedFrames", static_cast<long>(a_settings.dlssgGeneratedFrames));
 	ini.SetLongValue(kSection, "DynamicMFGEnabled", static_cast<long>(a_settings.dynamicMFGEnabled));
 	ini.SetLongValue(kSection, "DynamicMFGTargetFPS", static_cast<long>(a_settings.dynamicMFGTargetFPS));

@@ -290,6 +290,14 @@ namespace
 			settings.frameGenerationMode,
 			frameGenerationModes,
 			"Uses the selected vendor's frame generation path when supported.");
+		static constexpr std::array frameGenBackends{ "Auto", "NVIDIA DLSS-G", "AMD FSR" };
+		changed |= ComboSetting(
+			"Frame Generation Backend", settings.frameGenerationBackend, frameGenBackends,
+			"Which generator runs. DLSS-G needs an RTX 40 or 50 card; FSR frame generation runs on much "
+			"more, including AMD and Intel. Auto picks DLSS-G when the runtime reports it available and "
+			"falls back to FSR otherwise. This one needs a restart: the two use different swapchains -- "
+			"DLSS-G goes through Streamline's and FSR through FidelityFX's own -- and the game is given "
+			"exactly one, chosen before any of these settings can change.");
 		ImGuiMCP::EndDisabled();
 
 		const bool frameGenerationDisabled = upscalingDisabled || settings.frameGenerationMode == 0;

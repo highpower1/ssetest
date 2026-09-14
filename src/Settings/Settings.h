@@ -35,7 +35,13 @@ public:
 	{
 		uint32_t upscaleMethodPreference = static_cast<uint32_t>(UpscaleMethod::kDLSS);
 		uint32_t qualityMode = 1;             // 0=Native AA,1=Quality,2=Balanced,3=Perf,4=Ultra Perf
-		uint32_t frameGenerationMode = 0;     // 0=Disabled,1=On,2=Auto
+		uint32_t frameGenerationMode = 0;
+		// Which frame generator runs. The choice is fixed at swapchain creation --
+		// DLSS-G works through Streamline's proxy swapchain and FSR through
+		// FidelityFX's own, and only one swapchain exists -- so changing it takes
+		// a restart. 0 auto (DLSS-G when available, otherwise FSR), 1 DLSS-G only,
+		// 2 FSR only.
+		uint32_t frameGenerationBackend = 0;     // 0=Disabled,1=On,2=Auto
 		uint32_t dlssgGeneratedFrames = 0;    // 0=2x ... 4=6x
 		uint32_t dynamicMFGEnabled = 0;
 		uint32_t dynamicMFGTargetFPS = 300;

@@ -122,6 +122,15 @@ public:
 	bool EvaluateD3D12DLSSForCurrentFrame();
 	bool EvaluateD3D12FSRForCurrentFrame();
 	bool EvaluateFSRFrameGenerationForCurrentFrame();
+
+private:
+	// Drives FidelityFX frame generation for one frame: hands it this frame's
+	// scene motion, depth and jitter, and the hud-less image its generated
+	// frames have to match. Mirrors what PrepareAndTagDLSSGInputs does for
+	// DLSS-G, on the swapchain FidelityFX owns rather than Streamline's.
+	bool ConfigureFSRFrameGeneration(ID3D12GraphicsCommandList* a_commandList);
+
+public:
 	void SetPresentOverride(ID3D12Resource* a_finalColor);
 
 	// Snapshot the buffer the game presents from, taken after the world and

@@ -1065,6 +1065,13 @@ HRESULT DX12SwapChain::Present(UINT SyncInterval, UINT Flags, const DXGI_PRESENT
 		streamline->ClearDLSSGResourceTags(commandList);
 	}
 	auto fidelityFX = FidelityFX::GetSingleton();
+	// FidelityFX interpolates inside its own swapchain at present time, so its
+	// prepare dispatch has to be on this list, which is executed just below and
+	// before Present. Only reached when FidelityFX owns the swapchain; on the
+	// DLSS-G path this does nothing and the block underneath turns it off.
+	if (fidelityFXFrameGenerationSwapChainAllowed) {
+		ConfigureFSRFrameGeneration(commandList);
+	}
 	if (fidelityFX->IsFrameGenerationEnabled() &&
 		!upscaling->IsFSRFrameGenerationActive()) {
 		const auto desc = destination->GetDesc();
@@ -1332,7 +1339,7 @@ DX12SwapChain::D3D12EvaluationResult DX12SwapChain::EvaluateD3D12WorkOnCommandLi
 	const bool upscalerRequested = a_evaluateFSR || a_evaluateDLSS;
 	const bool upscalerSucceeded = (!a_evaluateFSR || result.fsr) && (!a_evaluateDLSS || result.dlss);
 	if (a_evaluateFSRFrameGeneration && (!upscalerRequested || upscalerSucceeded)) {
-		result.fsrFrameGeneration = upscaling->EvaluateFSRFrameGeneration(a_commandList, a_frameIndex);
+		result.fsrFrameGeneration = ConfigureFSRFrameGeneration(a_commandList);
 	}
 
 	return result;
@@ -1381,6 +1388,61 @@ void DX12SwapChain::CaptureUIBaseline()
 void DX12SwapChain::SetPresentOverride(ID3D12Resource* a_finalColor)
 {
 	presentOverrideFinalColor.copy_from(a_finalColor);
+}
+
+bool DX12SwapChain::ConfigureFSRFrameGeneration(ID3D12GraphicsCommandList* a_commandList)
+{
+	auto* upscaling = Upscaling::GetSingleton();
+	auto* up = D3D12Upscaler::GetSingleton();
+	auto* fidelityFX = FidelityFX::GetSingleton();
+
+	// false, not true: with a_checkMenu the function returns the cached
+	// fsrFrameGenerationActive, which is the very flag this code sets. Asking it
+	// that way would mean frame generation could only ever stay off.
+	const bool want = upscaling->ShouldUseFSRFrameGeneration(false) &&
+	                  !Upscaling::IsFrameGenerationBlockedByOverlay() &&
+	                  !upscaling->raceMenuOpen && up->IsActive();
+
+	auto* motionVectors = up->GetMotionVectors12();
+	auto* depth = up->GetDepth12();
+	// The generated frames have to match the real ones, so this is the same
+	// image DLSS-G is given: what the player actually sees, without the UI.
+	auto* hudless = GetDLSSGHudlessSource();
+
+	const float2 renderSize{ static_cast<float>(up->GetRenderWidth()), static_cast<float>(up->GetRenderHeight()) };
+	const float2 displaySize{ static_cast<float>(up->GetDisplayWidth()), static_cast<float>(up->GetDisplayHeight()) };
+	const auto*  cameraFrame = Util::CameraFrame::GetSingleton();
+	const float2 jitter = cameraFrame->useJitter ?
+	                          float2(cameraFrame->jitter.x, cameraFrame->jitter.y) :
+	                          float2(0.0f, 0.0f);
+
+	const bool enabled = want && motionVectors && depth && hudless && cameraFrame->valid;
+	if (enabled != upscaling->fsrFrameGenerationActive) {
+		upscaling->fsrFrameGenerationActive = enabled;
+		logger::info("[FidelityFX] Frame generation {} (render={}x{} display={}x{} hudless={})",
+			enabled ? "ENABLED" : "disabled",
+			static_cast<int>(renderSize.x), static_cast<int>(renderSize.y),
+			static_cast<int>(displaySize.x), static_cast<int>(displaySize.y),
+			static_cast<const void*>(hudless));
+	}
+
+	// Called even when disabled: FidelityFX has to be told to stop, and its own
+	// early-out handles the case where it was never configured.
+	return fidelityFX->ConfigureFrameGeneration(
+		d3d12Device.get(),
+		a_commandList,
+		swapChain.get(),
+		hudless,
+		motionVectors,
+		depth,
+		hudless,
+		nullptr,  // UI is recovered from the backbuffer, as on the DLSS-G path
+		jitter,
+		renderSize,
+		displaySize,
+		swapChainDesc.Format,
+		Util::State_GetSingleton()->frameCount,
+		enabled);
 }
 
 bool DX12SwapChain::EnsureFidelityFXFrameGenerationSwapChain()

@@ -8,6 +8,7 @@
 #include "Upscaling.h"
 
 #include "Game/Renderer.h"
+#include "Settings/Settings.h"
 
 namespace
 {
@@ -233,10 +234,20 @@ struct hkIDXGIFactoryCreateSwapChain
 				streamline->PostDevice();
 			}
 
-			const bool useFidelityFXFrameGeneration = Upscaling::kForceFSRFrameGenerationForTesting;
-			if (useFidelityFXFrameGeneration) {
-				logger::info("[DX12SwapChain] FidelityFX frame generation selected force={} dlssgAvailable={}", Upscaling::kForceFSRFrameGenerationForTesting, streamline->featureDLSSG);
-			}
+			// Which frame generator gets the swapchain is decided here and cannot
+			// change afterwards: DLSS-G drives Streamline's proxy and FSR drives
+			// FidelityFX's own, and the game gets exactly one swapchain. Auto
+			// prefers DLSS-G and falls back to FSR on hardware or a runtime that
+			// cannot do it.
+			const auto& fgSettings = SettingsStore::GetSingleton()->settings;
+			const bool  fsrRequested = fgSettings.frameGenerationBackend == 2;
+			const bool  autoFallsBackToFSR = fgSettings.frameGenerationBackend == 0 && !streamline->featureDLSSG;
+			const bool  useFidelityFXFrameGeneration =
+				Upscaling::kForceFSRFrameGenerationForTesting || fsrRequested || autoFallsBackToFSR;
+			logger::info("[DX12SwapChain] Frame generation backend: {} (setting={} dlssgAvailable={} force={})",
+				useFidelityFXFrameGeneration ? "FidelityFX (FSR)" : "Streamline (DLSS-G)",
+				fgSettings.frameGenerationBackend, streamline->featureDLSSG,
+				Upscaling::kForceFSRFrameGenerationForTesting);
 			dx12SwapChain->CreateSwapChain(dxgiFactory.get(), *pDesc, streamlineForProxy, useFidelityFXFrameGeneration);
 			dx12SwapChain->CreateInterop();
 
