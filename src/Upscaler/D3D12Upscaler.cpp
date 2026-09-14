@@ -518,6 +518,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	// true once a backend (Streamline plugin or direct NGX) actually came up.
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
+	neuralTemporal = s.dlssNRTemporal != 0;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
 	neuralDebugDifference = s.dlssNRDebugDifference != 0;
 	// Picked up by Evaluate, which is the only place the queue is known idle.
@@ -931,15 +932,16 @@ void D3D12Upscaler::Evaluate()
 				fingerprint = fingerprint * 131 + (o.useAutoMask ? 1u : 0u);
 				fingerprint = fingerprint * 131 + neuralEncoding;
 				fingerprint = fingerprint * 131 + (nrAfterUpscale ? 1u : 0u);
+				fingerprint = fingerprint * 131 + (neuralTemporal ? 1u : 0u);
 				fingerprint = mix(fingerprint, o.intensity);
 				fingerprint = mix(fingerprint, o.localToneStrength);
 				fingerprint = mix(fingerprint, o.localStructureStrength);
 				fingerprint = mix(fingerprint, o.skinStructureStrength);
 				if (fingerprint != loggedNeuralConfig) {
 					loggedNeuralConfig = fingerprint;
-					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
+					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} temporal={} encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
 						o.style, o.preset, nrParameters.passCount, o.useAutoMask,
-						nrAfterUpscale ? "after" : "before", neuralEncoding,
+						nrAfterUpscale ? "after" : "before", neuralTemporal, neuralEncoding,
 						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength);
 				}
 			}
@@ -959,7 +961,14 @@ void D3D12Upscaler::Evaluate()
 			}
 			nrParameters.depthInverted = false;
 			nrParameters.outputFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
-			nrParameters.reset = neuralRenderingSkipFrame;
+			// Reset every frame unless temporal accumulation was asked for. The
+			// uplift runs on an image Ray Reconstruction has already accumulated,
+			// so letting the model keep its own history stacks a second temporal
+			// pass on the first: trails behind anything that moves, and a colour
+			// that shifts as the two histories drift apart. Resetting costs the
+			// model its history and buys an output that is a function of the
+			// current frame alone.
+			nrParameters.reset = neuralRenderingSkipFrame || !neuralTemporal;
 
 			// NGX creates the feature lazily and that creation must not share a
 			// submission with an evaluation. Handle it here, before any of this

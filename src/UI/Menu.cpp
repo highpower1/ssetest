@@ -426,6 +426,15 @@ namespace
 			changed |= SliderIntSetting(
 				"NR Style", settings.dlssNRStyle, 0, 4, "%d",
 				"Selects the model's look. Undocumented; sweep it if the uplift seems to do nothing.");
+			changed |= CheckboxSetting(
+				"NR Temporal",
+				settings.dlssNRTemporal,
+				"Lets the uplift keep its own frame-to-frame history. Off by default, because the uplift "
+				"runs on an image Ray Reconstruction has already accumulated over time, and a second "
+				"temporal pass over the same image trails behind anything that moves and makes the colour "
+				"drift. With it off the model is reset every frame, so what you see depends only on the "
+				"frame you are looking at -- crisper and stable, at the cost of whatever the history was "
+				"smoothing.");
 			changed |= SliderIntSetting(
 				"NR Passes", settings.dlssNRPassCount, 1, 10, "%d",
 				"Re-runs the uplift over its own output. Each pass pushes the effect further at a "
