@@ -41,7 +41,16 @@ public:
 		// FidelityFX's own, and only one swapchain exists -- so changing it takes
 		// a restart. 0 auto (DLSS-G when available, otherwise FSR), 1 DLSS-G only,
 		// 2 FSR only.
-		uint32_t frameGenerationBackend = 0;     // 0=Disabled,1=On,2=Auto
+		uint32_t frameGenerationBackend = 0;
+		// The jitter-always-on patches overwrite ten and six bytes of game code so
+		// the engine applies our sub-pixel offset even with its own TAA off. The
+		// camera-state offset is hardcoded across SE and every AE build, unlike
+		// the other one, so on a runtime where it is wrong it clobbers whatever is
+		// actually there -- reported once as the third-person camera sitting high
+		// and to the left with the field of view changing as the player looks
+		// around. Turn this off to rule the patch out; the cost is that DLSS
+		// receives a jitter the scene was not rendered with, which ghosts.
+		uint32_t cameraStateJitterPatch = 1;     // 0=Disabled,1=On,2=Auto
 		uint32_t dlssgGeneratedFrames = 0;    // 0=2x ... 4=6x
 		uint32_t dynamicMFGEnabled = 0;
 		uint32_t dynamicMFGTargetFPS = 300;

@@ -266,10 +266,38 @@ namespace UpscalerHooks
 			const REL::Relocation<std::uintptr_t> buildCameraStateData{ REL::RelocationID(75711, 77520) };
 			constexpr std::uint8_t nop6[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
 			constexpr std::uint8_t nop10[] = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 };
-			REL::safe_write(updateJitterFn.address() + REL::Relocate<std::size_t>(0xE, 0x11), nop6, sizeof(nop6));
-			REL::safe_write(buildCameraStateData.address() + 0x1D5, nop10, sizeof(nop10));
-			logger::info("[UpscalerHooks] Applied jitter-always-on patches (updateJitter=0x{:X}, buildCameraStateData=0x{:X})",
-				updateJitterFn.address() + REL::Relocate<std::size_t>(0xE, 0x11), buildCameraStateData.address() + 0x1D5);
+
+			// Log what is actually at each site before overwriting it. These are
+			// PureDark's offsets and the camera-state one is not version-adjusted,
+			// so on a runtime where it is wrong this patch silently destroys ten
+			// bytes of something else. A log that names the bytes turns "the
+			// camera is broken on my machine" into a comparable fact.
+			const auto siteBytes = [](std::uintptr_t a_address, std::size_t a_count) {
+				std::string text;
+				for (std::size_t i = 0; i < a_count; ++i) {
+					text += std::format("{:02X} ", *reinterpret_cast<const std::uint8_t*>(a_address + i));
+				}
+				return text;
+			};
+
+			const auto jitterSite = updateJitterFn.address() + REL::Relocate<std::size_t>(0xE, 0x11);
+			const auto cameraSite = buildCameraStateData.address() + 0x1D5;
+			logger::info("[UpscalerHooks] Jitter patch sites: updateJitter=0x{:X} [{}] buildCameraStateData=0x{:X} [{}]",
+				jitterSite, siteBytes(jitterSite, sizeof(nop6)), cameraSite, siteBytes(cameraSite, sizeof(nop10)));
+
+			REL::safe_write(jitterSite, nop6, sizeof(nop6));
+
+			const bool patchCamera = SettingsStore::GetSingleton()->settings.cameraStateJitterPatch != 0;
+			if (patchCamera) {
+				REL::safe_write(cameraSite, nop10, sizeof(nop10));
+			} else {
+				logger::warn("[UpscalerHooks] The camera-state jitter patch is disabled by setting. The scene "
+							 "may render without our sub-pixel offset while the upscaler is told there is "
+							 "one, which ghosts -- but if a camera or field-of-view fault goes away with "
+							 "this off, that patch is the cause.");
+			}
+			logger::info("[UpscalerHooks] Applied jitter-always-on patches (updateJitter=yes, buildCameraStateData={})",
+				patchCamera ? "yes" : "SKIPPED");
 		}
 
 		logger::info("[UpscalerHooks] Installed verified render-pipeline hooks (observational pass)");

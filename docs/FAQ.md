@@ -137,6 +137,47 @@ not mean to press it. Keep pressing until the picture looks normal again.
 To stop it happening, set `UICompositeDebugKey = 0` in
 `Data/SKSE/Plugins/SkyrimUpscaler/SkyrimUpscaler.ini`.
 
+## My camera is in the wrong place, or the field of view keeps changing
+
+Set `CameraStateJitterPatch = 0` in
+`Data/SKSE/Plugins/SkyrimUpscaler/SkyrimUpscaler.ini` and restart.
+
+This mod overwrites ten bytes of the game's camera code so the engine keeps
+applying the sub-pixel offset upscaling needs even with the game's own
+anti-aliasing off. The address it writes to is the same for every supported
+game version, which may not be correct on all of them — and where it is wrong
+it damages whatever is actually there. A third-person camera sitting high and
+to the left, or a field of view that shifts as you look around, is what that
+looks like.
+
+With it off the upscaler may ghost slightly, because the image is no longer
+being rendered with the offset the upscaler is told about. **If turning it off
+fixes your camera, please report it with your game version** — the log now
+prints the bytes at that address on your runtime, and that is what is needed to
+fix it properly rather than by switch.
+
+## My frame rate at 4K is much worse than I expected
+
+Some of this is inherent and some is not.
+
+Running the upscaler at **Native AA** means the game renders at full resolution
+*and* the upscaler runs on top, so at 4K you are paying for a full 4K frame plus
+the upscaler. That costs frames rather than saving them; it buys anti-aliasing.
+If you want frames, pick **Quality**, **Balanced** or **Performance** — those
+render smaller and let the upscaler rebuild to your monitor's resolution, which
+is the entire point of the feature.
+
+**Leave the game's resolution at your monitor's resolution.** Do not set Skyrim
+to 1080p and expect the upscaler to fill a 4K screen — the quality mode is the
+control for that, and lowering the game's resolution as well just gives the
+upscaler less to work with.
+
+Frame generation does not help here. It raises the number on the counter without
+raising the real frame rate, and Skyrim's physics is tied to the real one, so
+generating frames on top of a real 25 fps leaves the physics behaving like 25
+fps. Get the real frame rate up first with a quality mode, then add frame
+generation on top if you still want it.
+
 ## The picture looks softer / sharper / wrong
 
 - **Too soft:** raise **Sharpness**, or use a higher quality mode (Quality
