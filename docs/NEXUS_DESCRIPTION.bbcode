@@ -3,7 +3,7 @@
 [line]
 
 [center][size=6][b]Skyrim Upscaler -- DLSS 4 / DLSS 5 Neural Rendering / FSR[/b][/size]
-[size=3]DLSS, DLAA, Frame Generation, Ray Reconstruction and NVIDIA's Neural Rendering, with ENB.[/size][/center]
+[size=3]DLSS, DLAA, FSR, frame generation from either vendor, Ray Reconstruction and NVIDIA's Neural Rendering, with ENB.[/size][/center]
 
 [line]
 
@@ -23,7 +23,7 @@ Three separate features. All of them are optional and you can run any combinatio
 
 [list]
 [*][b]Upscaling -- DLSS, DLAA and FSR.[/b] Skyrim renders at a lower resolution and the upscaler rebuilds a full-resolution image. You get frames back. At [b]Native AA[/b] it does not lower the resolution at all and instead gives you far better anti-aliasing than Skyrim's own TAA.
-[*][b]Frame Generation.[/b] The GPU creates extra frames between the real ones. On RTX 40 cards the driver's 2x cap can be lifted up to 6x.
+[*][b]Frame Generation -- NVIDIA DLSS-G or AMD FSR.[/b] The GPU creates extra frames between the real ones. Pick the backend in the menu, or leave it on Auto and it uses DLSS-G where the card supports it and FSR where it does not. On RTX 40 cards the driver's 2x cap on DLSS-G can be lifted up to 6x.
 [*][b]DLSS 5 Neural Rendering.[/b] NVIDIA's neural model reworks the finished image -- materials, lighting and skin stop looking flat. This is the newest feature and the hardest to get running.
 [/list]
 
@@ -41,9 +41,10 @@ Everything is configured in game. No ini editing required.
 [*][b]Community Shaders must not be installed[/b]
 [/list]
 
-[b]FSR[/b] -- any reasonably modern GPU
+[b]FSR upscaling[/b] -- any reasonably modern GPU
+[b]FSR frame generation[/b] -- any reasonably modern GPU, including AMD and Intel
 [b]DLSS / DLAA / Ray Reconstruction[/b] -- NVIDIA RTX
-[b]Frame Generation[/b] -- NVIDIA RTX 40 or 50
+[b]DLSS-G frame generation[/b] -- NVIDIA RTX 40 or 50
 [b]Neural Rendering[/b] -- NVIDIA RTX
 
 [b]Every runtime is included in the download.[/b] Nothing else to find, nothing else to place.
@@ -81,6 +82,10 @@ Read this before turning it on.
 [*]It needs a decent real frame rate to start with. Enabling it at 25 fps will not feel good.
 [/list]
 
+[b]Two backends.[/b] [b]Frame Generation Backend[/b] in the menu chooses between NVIDIA's DLSS-G and AMD's FSR. Auto takes DLSS-G where the card and runtime support it and FSR everywhere else, which is what puts frame generation within reach on hardware that is not an RTX 40 or 50.
+
+[b]Changing the backend needs a restart[/b], and this is not laziness: the two generators work through different swapchains -- DLSS-G through Streamline's and FSR through FidelityFX's own -- and the game is handed exactly one, chosen before any of these settings can be changed. The menu will say so too.
+
 [color=#ffaa00][b]Turn the Steam overlay off for Skyrim before using it.[/b][/color] Steam -> Skyrim -> Properties -> General -> In-Game Overlay. The overlay crashes when frame generation presents from its own thread. The mod refuses to run frame generation while it sees the overlay; there is a setting to override that, and if you do, a crash is on you.
 
 [b]Honest warning:[/b] during development frame generation hung the GPU more than once, and produced a [font=Courier New]DPC_WATCHDOG_VIOLATION[/font] bugcheck on one occasion. That class of failure is fixed and it has since run for tens of thousands of frames without incident, but it is off by default for a reason. A watchdog latches it off for the session if a Present call blocks.
@@ -107,7 +112,8 @@ Known things worth saying out loud:
 
 [list]
 [*]Skyrim has no G-buffer, so Ray Reconstruction's normals are reconstructed from depth and its material inputs are constants. It works, but it is not being fed what the model was designed for.
-[*]Frame Generation and the Steam overlay do not coexist.
+[*][b]FSR frame generation is the newest part of this and the least tested.[/b] DLSS-G has thousands of frames behind it on the author's machine; the FSR path has almost none, on a machine where DLSS-G is what Auto picks. Treat it as the experimental corner of an already experimental mod.
+[*]Frame Generation and the Steam overlay do not coexist. This applies to both backends -- the fault is in the overlay's present hook, not in either generator.
 [*]Only Steam SE 1.5.97 and AE 1.6.x. VR and GOG are out of scope and will not be added.
 [/list]
 

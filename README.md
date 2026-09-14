@@ -35,6 +35,7 @@ upscaler this project is derived from, which is itself a fork of
 | DLSS Super Resolution | Quality modes DLAA, Quality, Balanced, Performance, Ultra Performance |
 | AMD FSR | Same quality modes; works without an RTX GPU |
 | DLSS Frame Generation | 2x. Off by default. A present watchdog disables it for the session after two consecutive Present calls over 80 ms |
+| AMD FSR Frame Generation | The same feature without an RTX 40/50 card. `FrameGenerationBackend` selects it; Auto falls back to it when DLSS-G is unavailable. Needs a restart -- the two generators own different swapchains |
 | RTX 40 multi-frame generation | Up to 6x on Ada, which the driver otherwise caps at 2x, via [RTX40MFG-Unlock](https://github.com/dashdogy/RTX40MFG-Unlock) |
 | DLSS Ray Reconstruction | Skyrim has no G-buffer, so normals are reconstructed from depth and the material terms are constants ([details](docs/ARCHITECTURE.md)) |
 | DLSS 5 Neural Rendering | Off by default. Needs `nvngx_dlssnr.dll`; driven through NGX directly, since Streamline publishes no interface for it |

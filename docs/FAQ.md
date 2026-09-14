@@ -88,6 +88,17 @@ and earlier. That work is not this project's. It comes from the
 Rendering would not exist without them. If this is the feature you came for, go
 and say thank you over there.
 
+## Which frame generation should I use?
+
+There are two, and **Frame Generation Backend** in the menu picks between them:
+
+- **NVIDIA DLSS-G** — needs an RTX 40 or 50 card. Better tested here.
+- **AMD FSR** — runs on far more hardware, including AMD and Intel cards.
+- **Auto** (the default) — DLSS-G where it works, FSR everywhere else.
+
+**Changing it requires restarting the game.** The two use different swapchains
+and the game only gets one, decided before any setting can change it.
+
 ## Should I turn frame generation on?
 
 Try it, but know what it is:
