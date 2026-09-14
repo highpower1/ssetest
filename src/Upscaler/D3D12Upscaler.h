@@ -183,7 +183,9 @@ private:
 	// after the queue drains, and the uplift skipped for that one frame.
 	bool     neuralRenderingSkipFrame = false;
 	bool     neuralAfterUpscale = true;        // uplift the resolved image, not the raw scene
-	bool     neuralTemporal = false;           // let the model keep a history (see Settings)
+	bool     neuralTemporal = true;            // let the model keep a history (see Settings)
+	float    neuralMotionScaleX = 1.0f;        // sign/magnitude applied to the uplift's motion
+	float    neuralMotionScaleY = 1.0f;
 	bool     neuralDebugBypass = false;
 	bool     neuralDebugDifference = false;
 	float    neuralDebugDifferenceGain = 10.0f;

@@ -519,6 +519,8 @@ void D3D12Upscaler::UpdateFromSettings()
 	neuralRendering = s.dlssNREnabled != 0 && Streamline::GetSingleton()->IsDLSSNRUsable();
 	neuralAfterUpscale = s.dlssNRAfterUpscale != 0;
 	neuralTemporal = s.dlssNRTemporal != 0;
+	neuralMotionScaleX = s.dlssNRMotionScaleX;
+	neuralMotionScaleY = s.dlssNRMotionScaleY;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
 	neuralDebugDifference = s.dlssNRDebugDifference != 0;
 	// Picked up by Evaluate, which is the only place the queue is known idle.
@@ -933,15 +935,18 @@ void D3D12Upscaler::Evaluate()
 				fingerprint = fingerprint * 131 + neuralEncoding;
 				fingerprint = fingerprint * 131 + (nrAfterUpscale ? 1u : 0u);
 				fingerprint = fingerprint * 131 + (neuralTemporal ? 1u : 0u);
+				fingerprint = fingerprint * 131 + std::bit_cast<uint32_t>(neuralMotionScaleX);
+				fingerprint = fingerprint * 131 + std::bit_cast<uint32_t>(neuralMotionScaleY);
 				fingerprint = mix(fingerprint, o.intensity);
 				fingerprint = mix(fingerprint, o.localToneStrength);
 				fingerprint = mix(fingerprint, o.localStructureStrength);
 				fingerprint = mix(fingerprint, o.skinStructureStrength);
 				if (fingerprint != loggedNeuralConfig) {
 					loggedNeuralConfig = fingerprint;
-					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} temporal={} encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
+					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} temporal={} mvScale=({:.1f},{:.1f}) encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
 						o.style, o.preset, nrParameters.passCount, o.useAutoMask,
-						nrAfterUpscale ? "after" : "before", neuralTemporal, neuralEncoding,
+						nrAfterUpscale ? "after" : "before", neuralTemporal,
+						neuralMotionScaleX, neuralMotionScaleY, neuralEncoding,
 						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength);
 				}
 			}
@@ -1029,9 +1034,10 @@ void D3D12Upscaler::Evaluate()
 						jitterPixels)) {
 					nrParameters.motionVectors = guides->GetUpliftMotionVectors();
 					nrParameters.depth = guides->GetUpliftDepth();
-					// The resample already scaled motion into display pixels.
-					nrParameters.motionVectorScaleX = 1.0f;
-					nrParameters.motionVectorScaleY = 1.0f;
+					// The resample already scaled motion into display pixels; the
+					// setting only carries sign and any correction on top.
+					nrParameters.motionVectorScaleX = neuralMotionScaleX;
+					nrParameters.motionVectorScaleY = neuralMotionScaleY;
 				} else {
 					ReportNeuralFailure();
 					nrWanted = false;
@@ -1041,8 +1047,8 @@ void D3D12Upscaler::Evaluate()
 				nrParameters.depth = depth->resource12.get();
 				// Skyrim's motion is normalised screen space (Streamline runs it at
 				// mvecScale 1,1); NGX wants pixels, so scale by the guide size.
-				nrParameters.motionVectorScaleX = static_cast<float>(GetRenderWidth());
-				nrParameters.motionVectorScaleY = static_cast<float>(GetRenderHeight());
+				nrParameters.motionVectorScaleX = static_cast<float>(GetRenderWidth()) * neuralMotionScaleX;
+				nrParameters.motionVectorScaleY = static_cast<float>(GetRenderHeight()) * neuralMotionScaleY;
 			}
 		}
 

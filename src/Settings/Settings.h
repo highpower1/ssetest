@@ -116,12 +116,20 @@ public:
 		uint32_t dlssNRDebugDifference = 0;
 		float    dlssNRDebugDifferenceGain = 10.0f;
 		uint32_t dlssNRPassCount = 1;          // 1..3; more passes = stronger, slower
-		// The uplift keeps its own temporal history. Running after Ray
-		// Reconstruction means that history sits on top of one the upscaler has
-		// already accumulated, and two temporal passes over one image ghost and
-		// drift in colour. Off resets the model every frame, so each output
-		// depends only on the frame it was given.
-		uint32_t dlssNRTemporal = 0;
+		// The uplift keeps its own temporal history and needs it: resetting the
+		// model every frame removes the trailing but makes each frame's output
+		// independent of the last, which reads as a constant flicker and costs
+		// most of the effect. Left on; off is kept because it isolates the
+		// history when something else is suspected.
+		uint32_t dlssNRTemporal = 1;
+		// Applied to the motion vectors handed to the uplift. DLSS-NR's interface
+		// is not published and the vectors' expected sign was never verified, so
+		// this exists to settle it by measurement: -1 flips an axis, 0 withholds
+		// motion entirely. A flipped sign drags the model's history the wrong way
+		// and trails at twice the distance, which is what heavy ghosting looks
+		// like.
+		float dlssNRMotionScaleX = 1.0f;
+		float dlssNRMotionScaleY = 1.0f;
 		// 0 = before the upscaler, 1 = after it. Before means DLSS's temporal
 		// resolve runs over the uplift and largely averages the added detail back
 		// out, so after is the default. After needs display-resolution guides, so

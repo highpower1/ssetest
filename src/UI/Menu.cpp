@@ -429,12 +429,20 @@ namespace
 			changed |= CheckboxSetting(
 				"NR Temporal",
 				settings.dlssNRTemporal,
-				"Lets the uplift keep its own frame-to-frame history. Off by default, because the uplift "
-				"runs on an image Ray Reconstruction has already accumulated over time, and a second "
-				"temporal pass over the same image trails behind anything that moves and makes the colour "
-				"drift. With it off the model is reset every frame, so what you see depends only on the "
-				"frame you are looking at -- crisper and stable, at the cost of whatever the history was "
-				"smoothing.");
+				"Lets the uplift keep its own frame-to-frame history. Leave it on: the model needs it. "
+				"Turning it off does remove trailing, but it also makes every frame's output independent "
+				"of the last, which reads as a constant flicker and costs most of the effect. It is kept "
+				"as a way to rule the history out when something else is suspected.");
+			changed |= SliderFloatSetting(
+				"NR Motion Scale X", settings.dlssNRMotionScaleX, -2.0f, 2.0f, "%.1f",
+				"Multiplies the horizontal motion handed to the uplift. DLSS-NR's interface is not "
+				"published and the sign its motion vectors expect was never verified. If moving the camera "
+				"leaves long trails, try -1: a flipped sign drags the model's history the wrong way and "
+				"trails at twice the distance. 0 withholds motion on this axis.");
+			changed |= SliderFloatSetting(
+				"NR Motion Scale Y", settings.dlssNRMotionScaleY, -2.0f, 2.0f, "%.1f",
+				"The same for vertical motion. The two axes are separate because a sign convention can "
+				"differ on one and not the other.");
 			changed |= SliderIntSetting(
 				"NR Passes", settings.dlssNRPassCount, 1, 10, "%d",
 				"Re-runs the uplift over its own output. Each pass pushes the effect further at a "
