@@ -500,9 +500,12 @@ void D3D12Upscaler::UpdateFromSettings()
 	transparencyHint = s.transparencyHint != 0;
 	// At the scene-complete hook the whole point is to hand the result back to
 	// the game's own chain, so the present override is meaningless there and the
-	// copy-back is no longer a dead path: kMAIN has not been read yet.
-	presentOverride = s.presentOverride != 0 && s.upscalerHookPoint == 0;
-	if (!presentOverride && enbLoaded && s.upscalerHookPoint == 0) {
+	// copy-back is no longer a dead path: kMAIN has not been read yet. While the
+	// fallback is running we are at the pre-UI hook after all, where under ENB
+	// that copy reaches nothing, so the override has to come back with it.
+	const bool ownPresentPath = s.upscalerHookPoint == 0 || Upscaling::GetSingleton()->sceneCompleteFallback;
+	presentOverride = s.presentOverride != 0 && ownPresentPath;
+	if (!presentOverride && enbLoaded && ownPresentPath) {
 		static bool loggedDeadPath = false;
 		if (!loggedDeadPath) {
 			loggedDeadPath = true;

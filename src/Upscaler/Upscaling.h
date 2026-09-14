@@ -146,6 +146,11 @@ public:
 	// RaceMenu is handled separately from the outright block: see
 	// Upscaling::ShouldBlockUpscaling.
 	bool          raceMenuOpen = false;
+	// True while the scene-complete hook is not firing and the pre-UI hook has
+	// taken over. The present path depends on it: at the pre-UI hook, writing
+	// back into the game's colour target reaches nothing under ENB, so the
+	// present override has to come back for those frames.
+	bool          sceneCompleteFallback = false;
 	bool          frameGenerationActive = false;
 	bool          fsrFrameGenerationActive = false;
 	bool          dlssgMenuResumeReady = true;

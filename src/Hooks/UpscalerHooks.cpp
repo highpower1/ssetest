@@ -194,20 +194,34 @@ namespace
 			// do not control, so a setup where none of the post-chain targets is
 			// used would otherwise leave nothing running the upscaler at all.
 			const auto hookPoint = SettingsStore::GetSingleton()->settings.upscalerHookPoint;
+			auto*      upscaling = Upscaling::GetSingleton();
 			static uint32_t missedSceneComplete = 0;
 			bool            evaluateHere = hookPoint == 0;
 			if (hookPoint == 1) {
 				if (FrameTimeline::SceneCompleteFiredThisFrame()) {
 					missedSceneComplete = 0;
-				} else if (++missedSceneComplete >= 60) {
-					evaluateHere = true;
-					if (missedSceneComplete == 60) {
+				} else {
+					++missedSceneComplete;
+				}
+				const bool fallback = missedSceneComplete >= 60;
+				evaluateHere = fallback;
+				if (fallback != upscaling->sceneCompleteFallback) {
+					upscaling->sceneCompleteFallback = fallback;
+					// Both directions, because the earlier version logged only the
+					// way in and left no way to tell from a log which hook the
+					// upscaler was actually running at.
+					if (fallback) {
 						logger::warn("[UpscalerHooks] The scene-complete hook has not fired for 60 frames; "
-									 "falling back to the pre-UI hook. The upscaler will run, but after the "
-									 "game's post-processing and ENB, so its output reaches the screen "
-									 "ungraded.");
+									 "falling back to the pre-UI hook and restoring the present override, "
+									 "since writing back into the game's colour target reaches nothing "
+									 "there under ENB.");
+					} else {
+						logger::info("[UpscalerHooks] The scene-complete hook is firing again; back to "
+									 "upscaling before the game's post-processing.");
 					}
 				}
+			} else if (upscaling->sceneCompleteFallback) {
+				upscaling->sceneCompleteFallback = false;
 			}
 			if (evaluateHere) {
 				D3D12Upscaler::GetSingleton()->Evaluate();
