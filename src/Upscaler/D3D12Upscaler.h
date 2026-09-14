@@ -186,6 +186,7 @@ private:
 	bool     neuralTemporal = true;            // let the model keep a history (see Settings)
 	float    neuralMotionScaleX = 1.0f;        // sign/magnitude applied to the uplift's motion
 	float    neuralMotionScaleY = 1.0f;
+	bool     neuralChainTemporal = false;      // passes after the first keep their own history
 	bool     neuralDebugBypass = false;
 	bool     neuralDebugDifference = false;
 	float    neuralDebugDifferenceGain = 10.0f;

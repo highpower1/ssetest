@@ -130,6 +130,10 @@ public:
 		// like.
 		float dlssNRMotionScaleX = 1.0f;
 		float dlssNRMotionScaleY = 1.0f;
+		// Each uplift pass is a separate model with its own temporal history. Off
+		// means only the first keeps one, so raising the pass count adds strength
+		// without stacking a temporal accumulation per pass.
+		uint32_t dlssNRChainTemporal = 0;
 		// 0 = before the upscaler, 1 = after it. Before means DLSS's temporal
 		// resolve runs over the uplift and largely averages the added detail back
 		// out, so after is the default. After needs display-resolution guides, so

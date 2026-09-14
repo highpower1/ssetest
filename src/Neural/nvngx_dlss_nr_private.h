@@ -109,6 +109,13 @@ namespace nvngx::dlss_nr
 		float jitterOffsetY = 0.0f;
 		bool depthInverted = false;
 		bool reset = false;
+		// Whether passes after the first keep a history of their own. Each pass is
+		// a separate feature with its own temporal state, so leaving them all
+		// accumulating stacks one temporal pass per pass -- the trailing compounds
+		// and the image stops settling. The first pass is what stabilises the
+		// image; the rest are refinements on an already-stable input and do not
+		// need a history to do their job.
+		bool chainTemporal = false;
 		std::uint32_t passCount = 1;
 		DXGI_FORMAT outputFormat = DXGI_FORMAT_UNKNOWN;
 		Options options{};

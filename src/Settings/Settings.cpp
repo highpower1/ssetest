@@ -82,6 +82,7 @@ void SettingsStore::Load()
 	GetUInt(ini, "DLSSNRTemporal", settings.dlssNRTemporal);
 	GetFloat(ini, "DLSSNRMotionScaleX", settings.dlssNRMotionScaleX);
 	GetFloat(ini, "DLSSNRMotionScaleY", settings.dlssNRMotionScaleY);
+	GetUInt(ini, "DLSSNRChainTemporal", settings.dlssNRChainTemporal);
 	GetUInt(ini, "DLSSNRAfterUpscale", settings.dlssNRAfterUpscale);
 	GetUInt(ini, "DLSSNREncoding", settings.dlssNREncoding);
 	settings.dlssNRDiffuseWhiteNits = static_cast<float>(ini.GetDoubleValue(kSection, "DLSSNRDiffuseWhiteNits", settings.dlssNRDiffuseWhiteNits));
@@ -154,6 +155,7 @@ bool SettingsStore::Save(const Settings& a_settings)
 	ini.SetLongValue(kSection, "DLSSNRTemporal", static_cast<long>(a_settings.dlssNRTemporal));
 	ini.SetDoubleValue(kSection, "DLSSNRMotionScaleX", a_settings.dlssNRMotionScaleX);
 	ini.SetDoubleValue(kSection, "DLSSNRMotionScaleY", a_settings.dlssNRMotionScaleY);
+	ini.SetLongValue(kSection, "DLSSNRChainTemporal", static_cast<long>(a_settings.dlssNRChainTemporal));
 	ini.SetLongValue(kSection, "DLSSNRAfterUpscale", static_cast<long>(a_settings.dlssNRAfterUpscale));
 	ini.SetLongValue(kSection, "DLSSNREncoding", static_cast<long>(a_settings.dlssNREncoding));
 	ini.SetDoubleValue(kSection, "DLSSNRDiffuseWhiteNits", a_settings.dlssNRDiffuseWhiteNits);

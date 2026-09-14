@@ -524,6 +524,7 @@ void D3D12Upscaler::UpdateFromSettings()
 	neuralTemporal = s.dlssNRTemporal != 0;
 	neuralMotionScaleX = s.dlssNRMotionScaleX;
 	neuralMotionScaleY = s.dlssNRMotionScaleY;
+	neuralChainTemporal = s.dlssNRChainTemporal != 0;
 	neuralDebugBypass = s.dlssNRDebugBypass != 0;
 	neuralDebugDifference = s.dlssNRDebugDifference != 0;
 	// Picked up by Evaluate, which is the only place the queue is known idle.
@@ -940,15 +941,16 @@ void D3D12Upscaler::Evaluate()
 				fingerprint = fingerprint * 131 + (neuralTemporal ? 1u : 0u);
 				fingerprint = fingerprint * 131 + std::bit_cast<uint32_t>(neuralMotionScaleX);
 				fingerprint = fingerprint * 131 + std::bit_cast<uint32_t>(neuralMotionScaleY);
+				fingerprint = fingerprint * 131 + (neuralChainTemporal ? 1u : 0u);
 				fingerprint = mix(fingerprint, o.intensity);
 				fingerprint = mix(fingerprint, o.localToneStrength);
 				fingerprint = mix(fingerprint, o.localStructureStrength);
 				fingerprint = mix(fingerprint, o.skinStructureStrength);
 				if (fingerprint != loggedNeuralConfig) {
 					loggedNeuralConfig = fingerprint;
-					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} temporal={} mvScale=({:.1f},{:.1f}) encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
+					logger::info("[DLSS-NR] config: style={} preset={} passes={} autoMask={} order={} temporal={} chainTemporal={} mvScale=({:.1f},{:.1f}) encoding={} intensity={:.2f} localTone={:.2f} localStructure={:.2f} skin={:.2f}",
 						o.style, o.preset, nrParameters.passCount, o.useAutoMask,
-						nrAfterUpscale ? "after" : "before", neuralTemporal,
+						nrAfterUpscale ? "after" : "before", neuralTemporal, neuralChainTemporal,
 						neuralMotionScaleX, neuralMotionScaleY, neuralEncoding,
 						o.intensity, o.localToneStrength, o.localStructureStrength, o.skinStructureStrength);
 				}
@@ -977,6 +979,7 @@ void D3D12Upscaler::Evaluate()
 			// model its history and buys an output that is a function of the
 			// current frame alone.
 			nrParameters.reset = neuralRenderingSkipFrame || !neuralTemporal;
+			nrParameters.chainTemporal = neuralChainTemporal;
 
 			// NGX creates the feature lazily and that creation must not share a
 			// submission with an evaluation. Handle it here, before any of this

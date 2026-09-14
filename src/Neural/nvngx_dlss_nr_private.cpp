@@ -912,7 +912,12 @@ namespace nvngx::dlss_nr
 				passParameters.options.localToneStrength = 0.0f;
 			}
 
-			const auto reset = state.forceReset || a_parameters.reset;
+			// The same argument as the line above, carried to its conclusion. Each
+			// pass owns a separate history, so letting every one of them accumulate
+			// compounds the temporal response as well as the tone: one pass looks
+			// right and three trail. Only the first keeps a history unless asked.
+			const auto chained = pass > 0 && !a_parameters.chainTemporal;
+			const auto reset = state.forceReset || a_parameters.reset || chained;
 #ifdef UPSCALING_NR_CAPTURE
 			if (NRDiagnosticCapture::Requested()) {
 				NRDiagnosticCapture::Annotate(a_commandList,

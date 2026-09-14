@@ -443,6 +443,14 @@ namespace
 				"NR Motion Scale Y", settings.dlssNRMotionScaleY, -2.0f, 2.0f, "%.1f",
 				"The same for vertical motion. The two axes are separate because a sign convention can "
 				"differ on one and not the other.");
+			changed |= CheckboxSetting(
+				"NR Chain Temporal",
+				settings.dlssNRChainTemporal,
+				"Whether uplift passes after the first keep a frame history of their own. Each pass is a "
+				"separate model with separate temporal state, so with this on, three passes means three "
+				"temporal accumulations stacked on one image -- one pass looks right and three trail. Off, "
+				"only the first pass accumulates and the rest refine an already-stable image, which is "
+				"what makes raising the pass count useful rather than smeary.");
 			changed |= SliderIntSetting(
 				"NR Passes", settings.dlssNRPassCount, 1, 10, "%d",
 				"Re-runs the uplift over its own output. Each pass pushes the effect further at a "
