@@ -92,8 +92,10 @@ namespace
 
 	void WatchCameraPatchForCorruption()
 	{
-		if (!g_cameraPatchApplied || g_cameraPatchReverted) {
-			return;
+		// Runs whether or not the camera patch was applied: the likelier culprit
+		// is the dynamic-resolution write, which is independent of it.
+		if (g_cameraPatchReverted && !g_drsOffsetUsable) {
+			return;  // nothing left to switch off
 		}
 
 		const auto projection = Util::GetCameraProjection();
@@ -127,17 +129,40 @@ namespace
 		if (g_fovReversals < kFOVReversalsToRevert) {
 			return;
 		}
+		g_fovReversals = 0;
 
-		// Put the game's own bytes back. Ghosting is the price and it is far
-		// cheaper than a camera that cannot be aimed.
+		// Two things write into the game on our behalf, and a player narrowed
+		// which one this is: the fault appears with DLSS Quality and not with
+		// DLAA. The camera-state patch is applied once at startup regardless of
+		// quality mode, so it cannot be the difference. The dynamic-resolution
+		// write is skipped entirely at native scale, so it is. Stop that one
+		// first, and only reach for the patch if the oscillation survives it.
+		if (g_drsOffsetUsable) {
+			g_drsOffsetUsable = false;
+			logger::warn("[UpscalerHooks] The field of view has flipped direction {} times in a row by more "
+						 "than {:.3f} rad a frame, which is what corrupted camera state looks like and what "
+						 "no legitimate field-of-view animation does. The dynamic-resolution offsets are "
+						 "the only thing we write that a quality mode turns on, so they are wrong for this "
+						 "game build and have been switched off for the session. Quality modes will now "
+						 "render at full resolution -- slower, but correct. Please report this line with "
+						 "your exact game version.",
+				kFOVReversalsToRevert, kFOVJumpRadians);
+			return;
+		}
+
+		if (!g_cameraPatchApplied || g_cameraPatchReverted) {
+			return;
+		}
+
+		// Still oscillating with dynamic resolution off, so the other patch is
+		// the one. Put the game's own bytes back; ghosting is far cheaper than a
+		// camera that cannot be aimed.
 		REL::safe_write(g_cameraPatchSite, g_cameraPatchOriginal, sizeof(g_cameraPatchOriginal));
 		g_cameraPatchReverted = true;
-		logger::warn("[UpscalerHooks] The field of view has flipped direction {} times in a row by more "
-					 "than {:.3f} rad a frame. That is the signature of the camera-state jitter patch "
-					 "landing on the wrong bytes for this game build, so the original code has been "
-					 "restored and the patch will not be applied again this session. The image may ghost "
-					 "slightly. Please report this line with your exact game version.",
-			g_fovReversals, kFOVJumpRadians);
+		logger::warn("[UpscalerHooks] The field of view is still oscillating with dynamic resolution "
+					 "disabled, so the camera-state jitter patch is landing on the wrong bytes for this "
+					 "build too. The original code has been restored and the patch will not be applied "
+					 "again this session. The image may ghost slightly.");
 	}
 
 	// BSGraphics::Renderer InitD3D -- fires once when the renderer is set up.
@@ -247,6 +272,23 @@ namespace
 				// below 1.0, and a pair of unrelated floats is very unlikely to be
 				// bit-identical. Verified once, before the first write, and again
 				// against what we last wrote.
+				// Before trusting a hardcoded offset at all, see whether the game
+				// will name the field for us. INI settings are looked up by string
+				// through the engine's own collection, so a name that resolves is
+				// correct on every build by construction -- which is exactly what a
+				// raw offset is not. Probed once and logged either way, because if
+				// this works it replaces the guessing entirely.
+				static bool probedNamedScale = false;
+				if (!probedNamedScale) {
+					probedNamedScale = true;
+					for (const char* name : { "fDynamicResolutionCurrentWidthScale:Display",
+							 "fDynamicResolutionCurrentHeightScale:Display" }) {
+						auto* setting = RE::GetINISetting(name);
+						logger::info("[DRS] INI setting '{}' {}", name,
+							setting ? std::format("resolved, value={}", setting->data.f) : "not found");
+					}
+				}
+
 				if (!g_drsOffsetVerified) {
 					const float w = *widthScale;
 					const float h = *heightScale;

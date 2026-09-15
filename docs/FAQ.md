@@ -139,12 +139,15 @@ To stop it happening, set `UICompositeDebugKey = 0` in
 
 ## My camera is in the wrong place, or the field of view keeps changing
 
-The mod should now repair this by itself, during play, without a restart.
+**If this happens on a quality mode but not on DLAA, that is the known one.**
+The mod should now repair it by itself, during play, without a restart: it turns
+dynamic resolution off for the session, which makes quality modes render at full
+resolution -- slower than intended, but correct. A line in the log says so.
 
-It writes ten bytes into the game's camera code so the engine keeps applying
-the sub-pixel offset that upscaling needs. That address is the same for every
-supported game version, and on a version where it is wrong it damages the
-camera instead. Since that cannot be reproduced on the author's machine, the mod
+Two things this mod writes into the game use addresses that are the same for
+every supported version, and on a version where one is wrong it damages camera
+state instead. The one a quality mode switches on is the dynamic-resolution
+scale; the other is a patch to the camera code applied at startup regardless. Since that cannot be reproduced on the author's machine, the mod
 keeps the original bytes, watches the field of view, and puts them back if it
 sees the fault: a field of view flipping direction frame after frame, which is
 what corruption looks like and what sprinting or drawing a bow does not.
