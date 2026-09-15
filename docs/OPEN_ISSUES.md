@@ -1,5 +1,10 @@
 # Open issues
 
+> Two faults are currently being handed off rather than fixed here: the
+> quality-mode magnification and the Mod Control Panel closing on open. See
+> [HANDOFF.md](HANDOFF.md), which carries the measurements, the mitigation in
+> place, and the wrong turns worth not repeating.
+
 ## Resolved: D3D12 device lost at `commandList->Close()`
 
 Fixed 2026-09-13, diagnosed by Codex with the D3D12 debug layer.
