@@ -55,6 +55,13 @@ namespace
 	bool           g_jitterEnabled = true;
 	std::int32_t   g_jitterIndex = 0;
 
+	// Whether the dynamic-resolution offsets are trustworthy on this game build.
+	// Checked once against the shape of the data rather than assumed, because
+	// they are hardcoded across every supported version.
+	bool           g_drsOffsetVerified = false;
+	bool           g_drsOffsetUsable = true;
+	float          g_drsLastWritten = 0.0f;
+
 	// BSGraphics::Renderer InitD3D -- fires once when the renderer is set up.
 	struct Hook_InitD3D
 	{
@@ -143,20 +150,58 @@ namespace
 			// to full res via DLSS and then resets the scale so downstream is full.
 			auto*       drsUp = D3D12Upscaler::GetSingleton();
 			const float drsScale = drsUp->GetRenderScale();
-			if (a_state && drsUp->IsActive() && drsScale < 0.999f) {
+			if (a_state && drsUp->IsActive() && drsScale < 0.999f && g_drsOffsetUsable) {
 				static const std::size_t rtBase = REL::Relocate<std::size_t>(0x58, 0x60);
 				auto* p = reinterpret_cast<std::uint8_t*>(a_state);
 				float* widthScale = reinterpret_cast<float*>(p + rtBase + 0xA4);
 				float* heightScale = reinterpret_cast<float*>(p + rtBase + 0xA8);
-				const float before = *widthScale;
-				const bool sane = std::isfinite(before) && before > 0.05f && before < 4.0f;
-				if (sane) {
-					*widthScale = drsScale;
-					*heightScale = drsScale;
+
+				// These offsets are inherited and not adjusted per game build, so
+				// on a runtime where they are wrong this writes a float into some
+				// other field of State every frame. The old guard -- finite and
+				// between 0.05 and 4.0 -- passes a vertical field of view in
+				// radians without noticing, and overwriting that every frame looks
+				// exactly like a camera whose FOV changes as you look around.
+				//
+				// Check the shape of the data instead of just its range. Skyrim's
+				// dynamic resolution keeps the two scales in lockstep and at or
+				// below 1.0, and a pair of unrelated floats is very unlikely to be
+				// bit-identical. Verified once, before the first write, and again
+				// against what we last wrote.
+				if (!g_drsOffsetVerified) {
+					const float w = *widthScale;
+					const float h = *heightScale;
+					const bool plausible = std::isfinite(w) && std::isfinite(h) &&
+					                       w == h && w > 0.2f && w <= 1.0001f;
+					g_drsOffsetVerified = true;
+					g_drsOffsetUsable = plausible;
+					logger::info("[DRS] rtBase=0x{:X} scale pair read ({}, {}) -> {}",
+						rtBase, w, h,
+						plausible ? "accepted" : "REJECTED, dynamic resolution is off for this session");
+					if (!plausible) {
+						logger::warn("[DRS] The dynamic-resolution offsets do not look like a scale pair on "
+									 "this game build. Writing there anyway would corrupt whatever is "
+									 "actually at that address, so it is left alone. Upscaling still works; "
+									 "the quality modes will render at full resolution, which costs "
+									 "performance but nothing else.");
+					}
 				}
-				if (n <= 2) {
-					logger::info("[DRS] rtBase=0x{:X} fDynResScale before={} sane={} -> set={}",
-						rtBase, before, sane, sane ? drsScale : before);
+
+				if (g_drsOffsetUsable) {
+					// If something other than us owns this memory it will not read
+					// back as the value we wrote. Catch that rather than keep
+					// writing into it for the rest of the session.
+					if (g_drsLastWritten > 0.0f && *widthScale != *heightScale) {
+						g_drsOffsetUsable = false;
+						logger::warn("[DRS] The two scale fields stopped matching ({} vs {}) after we wrote "
+									 "{}. Something else owns that memory on this build; dynamic resolution "
+									 "is off for this session.",
+							*widthScale, *heightScale, g_drsLastWritten);
+					} else {
+						*widthScale = drsScale;
+						*heightScale = drsScale;
+						g_drsLastWritten = drsScale;
+					}
 				}
 			}
 
@@ -287,10 +332,42 @@ namespace UpscalerHooks
 
 			REL::safe_write(jitterSite, nop6, sizeof(nop6));
 
-			const bool patchCamera = SettingsStore::GetSingleton()->settings.cameraStateJitterPatch != 0;
+			// Both patches replace a branch that skips applying the jitter. What
+			// that branch is encoded as varies, but every encoding of one begins
+			// with a jump or with a compare feeding a jump a couple of bytes
+			// later. If the bytes here are neither, this is not the branch on this
+			// build and NOPing them destroys whatever it really is -- so decline.
+			// The cost of declining is ghosting. The cost of being wrong is the
+			// game's camera.
+			const auto looksLikeBranch = [](std::uintptr_t a_address, std::size_t a_count) {
+				for (std::size_t i = 0; i < std::min<std::size_t>(a_count, 6); ++i) {
+					const auto op = *reinterpret_cast<const std::uint8_t*>(a_address + i);
+					if (op == 0xEB || (op >= 0x70 && op <= 0x7F)) {
+						return true;  // jmp / jcc rel8
+					}
+					if (op == 0x0F) {
+						const auto second = *reinterpret_cast<const std::uint8_t*>(a_address + i + 1);
+						if (second >= 0x80 && second <= 0x8F) {
+							return true;  // jcc rel32
+						}
+					}
+				}
+				return false;
+			};
+
+			const bool patchRequested = SettingsStore::GetSingleton()->settings.cameraStateJitterPatch != 0;
+			const bool cameraSiteLooksRight = looksLikeBranch(cameraSite, sizeof(nop10));
+			const bool patchCamera = patchRequested && cameraSiteLooksRight;
+			if (patchRequested && !cameraSiteLooksRight) {
+				logger::warn("[UpscalerHooks] The camera-state jitter patch site does not contain a branch on "
+							 "this game build, so it has NOT been written. The offset is inherited and is not "
+							 "adjusted per version; overwriting the wrong ten bytes there corrupts the "
+							 "camera. Upscaling still works and may ghost slightly. Please report the byte "
+							 "line above with your exact game version.");
+			}
 			if (patchCamera) {
 				REL::safe_write(cameraSite, nop10, sizeof(nop10));
-			} else {
+			} else if (!patchRequested) {
 				logger::warn("[UpscalerHooks] The camera-state jitter patch is disabled by setting. The scene "
 							 "may render without our sub-pixel offset while the upscaler is told there is "
 							 "one, which ghosts -- but if a camera or field-of-view fault goes away with "

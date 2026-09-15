@@ -13,7 +13,7 @@ set_config("skyrim_vr", false)
 includes("lib/commonlibsse-ng")
 
 set_project("SkyrimUpscaler")
-set_version("1.1.1")
+set_version("1.1.2")
 set_license("GPL-3.0")
 set_languages("c++23")
 set_warnings("allextra")
