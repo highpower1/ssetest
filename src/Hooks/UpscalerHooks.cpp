@@ -310,6 +310,22 @@ namespace
 				}
 
 				g_drsScaleField = widthScale;
+				// Say, once, whether the value we wrote last frame survived. If the
+				// engine is still overwriting it the scene is drawn full size and
+				// cropping it would magnify the picture -- which is the fault this
+				// is here to catch, not a subtlety.
+				static bool loggedSurvival = false;
+				if (!loggedSurvival && g_drsLastWritten > 0.0f) {
+					loggedSurvival = true;
+					const float readBack = *widthScale;
+					logger::info("[DRS] Scale written last frame was {:.4f}; it reads back as {:.4f} now -- {}",
+						g_drsLastWritten, readBack,
+						std::abs(readBack - g_drsLastWritten) < 0.001f ?
+							"the engine kept it, so the scene really is rendering smaller" :
+							"SOMETHING OVERWROTE IT, so the scene is rendering full size and the quality "
+							"modes will magnify the picture");
+				}
+
 				if (g_drsOffsetUsable) {
 					// If something other than us owns this memory it will not read
 					// back as the value we wrote. Catch that rather than keep

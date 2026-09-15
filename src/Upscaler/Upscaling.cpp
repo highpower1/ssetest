@@ -19,11 +19,23 @@ void Upscaling::OnDataLoaded()
 	}
 	SettingsStore::GetSingleton()->Load();
 
-	// STEP 2: enable the engine's dynamic-resolution render path so our
-	// per-frame scale override (in the UpdateJitter hook) actually downsamples.
+	// This used to force the setting ON, on the reasoning that the engine's
+	// dynamic-resolution path had to be enabled for our per-frame scale override
+	// to downsample anything. It does the opposite of what was wanted.
+	//
+	// "Auto" is a controller: every frame it decides a scale from its own frame
+	// rate target and writes it. With headroom it decides 1.0, and it runs after
+	// our override, so ours is discarded and the scene renders at full size --
+	// while the upscaler still crops the top-left fraction of that and stretches
+	// it to the display. That is the zoom people have been reporting on every
+	// quality mode except DLAA, and a log on the author's machine showed it
+	// directly: asked for 0.3333, rendered at 1.0000.
+	//
+	// The scale is ours to set. Turn the controller off so nothing overwrites it.
 	if (auto* drsSetting = RE::GetINISetting("bEnableAutoDynamicResolution:Display")) {
-		drsSetting->data.b = true;
-		logger::info("[Upscaling] Forced bEnableAutoDynamicResolution:Display = true");
+		drsSetting->data.b = false;
+		logger::info("[Upscaling] Set bEnableAutoDynamicResolution:Display = false so the engine's own "
+					 "controller stops overwriting the render scale this plugin sets");
 	} else {
 		logger::warn("[Upscaling] Could not find bEnableAutoDynamicResolution:Display INI setting");
 	}
