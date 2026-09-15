@@ -5,6 +5,7 @@
 #include "Game/Renderer.h"
 #include "Game/Util.h"
 #include "Render/D3D12NeuralGBuffer.h"
+#include "Hooks/UpscalerHooks.h"
 #include "Render/DeviceRemovedReport.h"
 
 extern bool enbLoaded;  // main.cpp: set when ENB's d3d11.dll is loaded
@@ -386,6 +387,23 @@ namespace
 // The final pre-UI scene colour: the uplift's output when Neural Rendering ran
 // after the upscaler this frame, otherwise the upscaler's own output. Present
 // and DLSS-G both go through here so they always see the same image.
+float D3D12Upscaler::EffectiveScale() const
+{
+	// The engine's own scale wins over ours. They agree while the override is
+	// working; when they disagree it is because the write did not take, and
+	// believing our own request there is what zooms the screen.
+	const float engineScale = UpscalerHooks::EffectiveRenderScale();
+	static float loggedMismatch = 0.0f;
+	if (std::abs(engineScale - renderScale) > 0.01f && std::abs(loggedMismatch - renderScale) > 0.001f) {
+		loggedMismatch = renderScale;
+		logger::warn("[D3D12Upscaler] Asked the engine to render at {:.4f} but it rendered at {:.4f}. Using "
+					 "the engine's, so the picture is correct rather than magnified; the quality mode will "
+					 "not be saving any performance while this is true.",
+			renderScale, engineScale);
+	}
+	return engineScale;
+}
+
 ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const
 {
 	if (neuralColorReady) {
@@ -900,6 +918,30 @@ void D3D12Upscaler::Evaluate()
 		neuralRenderingActive = false;
 
 		nvngx::dlss_nr::D3D12EvaluationParameters nrParameters{};
+		// Give an optional feature up rather than let the frame fail. Running out
+		// of video memory is transient and tracks what is on screen, so without
+		// this the upscaler switches itself on and off as the player turns -- and
+		// the features that cost the most are the ones added last.
+		if (sl->OutOfVideoMemoryPersisting()) {
+			sl->ClearOutOfVideoMemory();
+			if (neuralRendering) {
+				neuralRendering = false;
+				logger::warn("[D3D12Upscaler] Ran out of video memory for {} frames in a row, so Neural "
+							 "Rendering has been turned off for this session. It is the most expensive "
+							 "feature here. Turn it back on in the menu if you free memory elsewhere, or "
+							 "pick a higher quality mode, which renders smaller and costs less.",
+					Streamline::kOutOfVRAMStreakLimit);
+			} else if (rayReconstruction) {
+				rayReconstruction = false;
+				logger::warn("[D3D12Upscaler] Still out of video memory with Neural Rendering off, so Ray "
+							 "Reconstruction has been turned off too. Plain DLSS remains.");
+			} else {
+				logger::warn("[D3D12Upscaler] Out of video memory with only plain DLSS left. Nothing further "
+							 "can be given up here; the game itself needs less, or the display needs to be "
+							 "smaller.");
+			}
+		}
+
 		bool       nrWanted = method == 2 && neuralRendering && EnsureNeuralColor();
 		const bool nrAfterUpscale = neuralAfterUpscale;
 

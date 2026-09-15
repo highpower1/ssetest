@@ -1075,6 +1075,43 @@ void Streamline::ClearDLSSGResourceTags(ID3D12GraphicsCommandList* a_commandList
 	presentFrameTokenIndex = currentFrameTokenIndex;
 }
 
+void Streamline::LogVideoMemory(const char* a_when)
+{
+	// Reported in a form a player can act on. The local budget is what the
+	// driver says this process may use before it starts evicting, and every
+	// texture this plugin adds comes out of it.
+	winrt::com_ptr<IDXGIFactory4> factory;
+	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(factory.put())))) {
+		return;
+	}
+	winrt::com_ptr<IDXGIAdapter3> adapter;
+	for (UINT i = 0;; ++i) {
+		winrt::com_ptr<IDXGIAdapter1> candidate;
+		if (factory->EnumAdapters1(i, candidate.put()) == DXGI_ERROR_NOT_FOUND) {
+			break;
+		}
+		DXGI_ADAPTER_DESC1 desc{};
+		candidate->GetDesc1(&desc);
+		if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+			adapter = candidate.try_as<IDXGIAdapter3>();
+			break;
+		}
+	}
+	if (!adapter) {
+		return;
+	}
+
+	DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+	if (FAILED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+		return;
+	}
+	constexpr double kMiB = 1024.0 * 1024.0;
+	logger::warn("[Streamline] Video memory {}: {:.0f} MiB in use of a {:.0f} MiB budget. Every feature "
+				 "this plugin adds costs some -- Ray Reconstruction and Neural Rendering most of all, and "
+				 "a higher quality mode costs less than a lower one because it renders smaller.",
+		a_when, static_cast<double>(info.CurrentUsage) / kMiB, static_cast<double>(info.Budget) / kMiB);
+}
+
 void Streamline::SetPresentFrameIndex(uint32_t a_frameIndex)
 {
 	presentFrameToken = GetFrameTokenForFrame(a_frameIndex);
@@ -1573,6 +1610,17 @@ bool Streamline::UpscaleD3D12(ID3D12Resource* a_color, ID3D12Resource* a_outputC
 	sl::ViewportHandle view(viewport);
 	const sl::BaseStructure* inputs[] = { &view };
 	if (SL_FAILED(result, slEvaluateFeature(sl::kFeatureDLSS, *a_frameToken, inputs, _countof(inputs), a_commandList))) {
+		// Out of video memory is not like the other failures. It is transient,
+		// it tracks what is on screen, and on its own it makes the upscaler turn
+		// itself on and off as the player looks around. Count a run of them so
+		// the caller can give something up instead.
+		if (result == sl::Result::eWarnOutOfVRAM) {
+			if (++outOfVRAMStreak == kOutOfVRAMStreakLimit) {
+				LogVideoMemory("on running out during DLSS evaluate");
+			}
+		} else {
+			outOfVRAMStreak = 0;
+		}
 		logger::warn(
 			"[Streamline] D3D12 DLSS evaluate failed: {} token={} render={}x{} display={}x{} color={} output={} mvec={} depth={} transparency={} formats color={} mvec={} depth={}",
 			magic_enum::enum_name(result),

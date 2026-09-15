@@ -61,6 +61,7 @@ namespace
 	bool           g_drsOffsetVerified = false;
 	bool           g_drsOffsetUsable = true;
 	float          g_drsLastWritten = 0.0f;
+	const float*   g_drsScaleField = nullptr;
 
 	// ---- camera-state patch self-repair ---------------------------------
 	//
@@ -308,6 +309,7 @@ namespace
 					}
 				}
 
+				g_drsScaleField = widthScale;
 				if (g_drsOffsetUsable) {
 					// If something other than us owns this memory it will not read
 					// back as the value we wrote. Catch that rather than keep
@@ -441,6 +443,20 @@ namespace
 
 namespace UpscalerHooks
 {
+	float EffectiveRenderScale()
+	{
+		if (!g_drsOffsetUsable || !g_drsScaleField) {
+			return 1.0f;
+		}
+		const float scale = *g_drsScaleField;
+		// Anything outside this is not a scale, and treating it as one is how the
+		// screen ends up zoomed.
+		if (!std::isfinite(scale) || scale <= 0.2f || scale > 1.0001f) {
+			return 1.0f;
+		}
+		return scale;
+	}
+
 	void Install()
 	{
 		stl::write_thunk_call<Hook_InitD3D>(

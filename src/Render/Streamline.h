@@ -232,8 +232,19 @@ public:
 	bool featureDLSSG = false; ///< True if DLSS Frame Generation is available
 	bool featureDLSSD = false; ///< True if DLSS Ray Reconstruction (DLSS-D) is available
 	std::string dlssdStatus{ "not checked" }; ///< Human-readable DLSS-RR availability reason (for the menu)
-	bool featureDLSSNR = false; ///< True if Streamline's own DLSS-NR plugin came up
+	bool featureDLSSNR = false;  ///< True if Streamline's own DLSS-NR plugin came up
 	std::string dlssnrStatus{ "not checked" }; ///< Human-readable DLSS-NR availability reason (for the menu)
+
+	// Raised when Streamline reports it could not evaluate for want of video
+	// memory. That failure is per frame and depends on what is on screen, so
+	// left alone it makes the upscaler appear to switch on and off as the player
+	// turns -- which is exactly how it was reported. The upscaler reads this and
+	// gives an optional feature up instead of flickering.
+	static constexpr uint32_t kOutOfVRAMStreakLimit = 30;
+	uint32_t                  outOfVRAMStreak = 0;
+	[[nodiscard]] bool OutOfVideoMemoryPersisting() const { return outOfVRAMStreak >= kOutOfVRAMStreakLimit; }
+	void               ClearOutOfVideoMemory() { outOfVRAMStreak = 0; }
+	void               LogVideoMemory(const char* a_when);
 	/// True once the direct-NGX DLSS-NR backend has initialised. Streamline
 	/// rejects the preview NR plugin on most driver/runtime combinations, so this
 	/// is the path that actually carries the feature.

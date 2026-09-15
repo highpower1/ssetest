@@ -71,8 +71,12 @@ public:
 	[[nodiscard]] uint32_t GetDisplayHeight() const { return displayHeight; }
 	[[nodiscard]] float    GetRenderScale() const { return renderScale; }
 	void                   SetRenderScale(float a_scale) { renderScale = a_scale; }
-	[[nodiscard]] uint32_t GetRenderWidth() const { return static_cast<uint32_t>(displayWidth * renderScale + 0.5f); }
-	[[nodiscard]] uint32_t GetRenderHeight() const { return static_cast<uint32_t>(displayHeight * renderScale + 0.5f); }
+	// Sized from the scale the engine actually rendered at, not the one we asked
+	// for. If the dynamic-resolution write did not take, the scene is full size
+	// and cropping the top-left fraction of it would zoom the picture.
+	[[nodiscard]] uint32_t GetRenderWidth() const { return static_cast<uint32_t>(displayWidth * EffectiveScale() + 0.5f); }
+	[[nodiscard]] uint32_t GetRenderHeight() const { return static_cast<uint32_t>(displayHeight * EffectiveScale() + 0.5f); }
+	[[nodiscard]] float    EffectiveScale() const;
 
 	// Per-frame processing at the Main::DrawWorld pre-UI hook.
 	// Increment 2a: a D3D11->D3D12->D3D11 identity round-trip of the main color
