@@ -387,23 +387,6 @@ namespace
 // The final pre-UI scene colour: the uplift's output when Neural Rendering ran
 // after the upscaler this frame, otherwise the upscaler's own output. Present
 // and DLSS-G both go through here so they always see the same image.
-float D3D12Upscaler::EffectiveScale() const
-{
-	// The engine's own scale wins over ours. They agree while the override is
-	// working; when they disagree it is because the write did not take, and
-	// believing our own request there is what zooms the screen.
-	const float engineScale = UpscalerHooks::EffectiveRenderScale();
-	static float loggedMismatch = 0.0f;
-	if (std::abs(engineScale - renderScale) > 0.01f && std::abs(loggedMismatch - renderScale) > 0.001f) {
-		loggedMismatch = renderScale;
-		logger::warn("[D3D12Upscaler] Asked the engine to render at {:.4f} but it rendered at {:.4f}. Using "
-					 "the engine's, so the picture is correct rather than magnified; the quality mode will "
-					 "not be saving any performance while this is true.",
-			renderScale, engineScale);
-	}
-	return engineScale;
-}
-
 ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const
 {
 	if (neuralColorReady) {
