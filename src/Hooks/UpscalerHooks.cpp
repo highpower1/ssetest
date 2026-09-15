@@ -62,6 +62,7 @@ namespace
 	bool           g_drsOffsetUsable = true;
 	float          g_drsLastWritten = 0.0f;
 	const float*   g_drsScaleField = nullptr;
+	float          g_sampledRenderScale = 1.0f;
 
 	// ---- camera-state patch self-repair ---------------------------------
 	//
@@ -459,18 +460,26 @@ namespace
 
 namespace UpscalerHooks
 {
-	float EffectiveRenderScale()
+	void SampleRenderScale()
 	{
+		// Latched once a frame. GetRenderWidth and GetRenderHeight are called many
+		// times while a frame is set up -- for the upscaler's extents, the guide
+		// buffers, the jitter phase -- and reading live game memory each time can
+		// return different answers within one frame. Sizes that disagree with each
+		// other are worse than either answer alone.
+		g_sampledRenderScale = 1.0f;
 		if (!g_drsOffsetUsable || !g_drsScaleField) {
-			return 1.0f;
+			return;
 		}
 		const float scale = *g_drsScaleField;
-		// Anything outside this is not a scale, and treating it as one is how the
-		// screen ends up zoomed.
-		if (!std::isfinite(scale) || scale <= 0.2f || scale > 1.0001f) {
-			return 1.0f;
+		if (std::isfinite(scale) && scale > 0.2f && scale <= 1.0001f) {
+			g_sampledRenderScale = scale;
 		}
-		return scale;
+	}
+
+	float EffectiveRenderScale()
+	{
+		return g_sampledRenderScale;
 	}
 
 	void Install()

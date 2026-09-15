@@ -6,6 +6,7 @@
 #include "Game/Util.h"
 #include "Render/D3D12NeuralGBuffer.h"
 #include "Hooks/UpscalerHooks.h"
+#include "Hooks/UpscalerHooks.h"
 #include "Render/DeviceRemovedReport.h"
 
 extern bool enbLoaded;  // main.cpp: set when ENB's d3d11.dll is loaded
@@ -387,6 +388,21 @@ namespace
 // The final pre-UI scene colour: the uplift's output when Neural Rendering ran
 // after the upscaler this frame, otherwise the upscaler's own output. Present
 // and DLSS-G both go through here so they always see the same image.
+float D3D12Upscaler::EffectiveScale() const
+{
+	const float engineScale = UpscalerHooks::EffectiveRenderScale();
+	static float loggedFor = -1.0f;
+	if (std::abs(engineScale - renderScale) > 0.01f && std::abs(loggedFor - renderScale) > 0.001f) {
+		loggedFor = renderScale;
+		logger::warn("[D3D12Upscaler] Asked the engine for a render scale of {:.4f}; it drew at {:.4f}. "
+					 "Sizing the upscaler's input from what it drew, so the picture is correct rather than "
+					 "magnified. While this is true the quality mode saves no performance -- the scene is "
+					 "full size and is being reconstructed from full size.",
+			renderScale, engineScale);
+	}
+	return engineScale;
+}
+
 ID3D12Resource* D3D12Upscaler::GetHudlessColor12() const
 {
 	if (neuralColorReady) {
@@ -720,6 +736,9 @@ void D3D12Upscaler::Evaluate()
 		taaOriginal = GetEngineTAA();
 		taaOriginalKnown = true;
 	}
+
+	// Latch what the engine actually rendered at before anything asks for a size.
+	UpscalerHooks::SampleRenderScale();
 
 	const bool upscaling = renderScale < 0.999f;
 	const bool active = IsActive();

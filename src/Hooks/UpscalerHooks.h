@@ -13,6 +13,10 @@ namespace UpscalerHooks
 	// was reported as such.
 	[[nodiscard]] float EffectiveRenderScale();
 
+	// Latches the scale for the frame. Called once, at the top of the upscaler's
+	// evaluation, before anything asks for a size.
+	void SampleRenderScale();
+
 	// Installs the Skyrim render-pipeline hooks used to drive upscaling.
 	//
 	// Hook points are taken from PureDark/Skyrim-Upscaler (2022) and VERIFIED

@@ -71,8 +71,15 @@ public:
 	[[nodiscard]] uint32_t GetDisplayHeight() const { return displayHeight; }
 	[[nodiscard]] float    GetRenderScale() const { return renderScale; }
 	void                   SetRenderScale(float a_scale) { renderScale = a_scale; }
-	[[nodiscard]] uint32_t GetRenderWidth() const { return static_cast<uint32_t>(displayWidth * renderScale + 0.5f); }
-	[[nodiscard]] uint32_t GetRenderHeight() const { return static_cast<uint32_t>(displayHeight * renderScale + 0.5f); }
+	// Sized from the scale the engine actually used, not the one we asked for.
+	// Measured on this project's own machine: the plugin writes 0.3333 and the
+	// field reads back 1.0000 before the scene is drawn, so the scene is full
+	// size. Cropping the top-left third of that and stretching it to the display
+	// is a three times magnification, which is the zoom reported on every
+	// quality mode except DLAA. Believing the request is what causes it.
+	[[nodiscard]] uint32_t GetRenderWidth() const { return static_cast<uint32_t>(displayWidth * EffectiveScale() + 0.5f); }
+	[[nodiscard]] uint32_t GetRenderHeight() const { return static_cast<uint32_t>(displayHeight * EffectiveScale() + 0.5f); }
+	[[nodiscard]] float    EffectiveScale() const;
 
 	// Per-frame processing at the Main::DrawWorld pre-UI hook.
 	// Increment 2a: a D3D11->D3D12->D3D11 identity round-trip of the main color
