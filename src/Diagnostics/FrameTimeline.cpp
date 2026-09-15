@@ -20,10 +20,17 @@ namespace
 	// Several are listed because a configuration that disables one still has to
 	// trigger: whichever comes first wins, and the frame is only triggered once.
 	constexpr std::array kPostChainStart{
+		// Ordered by how early they appear once the scene is finished. Lens
+		// flares come first but only when a light source is on screen, which is
+		// why this list cannot be only them: a trigger that depends on where the
+		// player is looking makes the upscaler appear to switch on and off as
+		// they turn.
 		RE::RENDER_TARGET::kIBLENSFLARES_LIGHTS_FILTER,
 		RE::RENDER_TARGET::kIBLENSFLARES_DOWNSAMPLE_16X_4Y_PING,
 		RE::RENDER_TARGET::kHDR_DOWNSAMPLE0,
+		RE::RENDER_TARGET::kHDR_BLOOM,
 		RE::RENDER_TARGET::kIMAGESPACE_TEMP_COPY,
+		RE::RENDER_TARGET::kLDR_DOWNSAMPLE0,
 	};
 
 	void (*g_sceneComplete)() = nullptr;

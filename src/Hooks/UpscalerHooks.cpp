@@ -361,31 +361,63 @@ namespace
 			// used would otherwise leave nothing running the upscaler at all.
 			const auto hookPoint = SettingsStore::GetSingleton()->settings.upscalerHookPoint;
 			auto*      upscaling = Upscaling::GetSingleton();
-			static uint32_t missedSceneComplete = 0;
-			bool            evaluateHere = hookPoint == 0;
+			bool       evaluateHere = hookPoint == 0;
 			if (hookPoint == 1) {
-				if (FrameTimeline::SceneCompleteFiredThisFrame()) {
-					missedSceneComplete = 0;
-				} else {
-					++missedSceneComplete;
-				}
-				const bool fallback = missedSceneComplete >= 60;
-				evaluateHere = fallback;
-				if (fallback != upscaling->sceneCompleteFallback) {
-					upscaling->sceneCompleteFallback = fallback;
-					// Both directions, because the earlier version logged only the
-					// way in and left no way to tell from a log which hook the
-					// upscaler was actually running at.
-					if (fallback) {
-						logger::warn("[UpscalerHooks] The scene-complete hook has not fired for 60 frames; "
-									 "falling back to the pre-UI hook and restoring the present override, "
-									 "since writing back into the game's colour target reaches nothing "
-									 "there under ENB.");
-					} else {
-						logger::info("[UpscalerHooks] The scene-complete hook is firing again; back to "
-									 "upscaling before the game's post-processing.");
+				// The scene-complete trigger is a render-target bind, and some of
+				// the passes it watches for only run when the scene calls for them
+				// -- lens flares need a light source on screen. So it fires while
+				// the player faces one way and not while they face another.
+				//
+				// Deciding the output path per frame off that was the real damage.
+				// The two paths composite completely differently, so flipping
+				// between them as the camera turns looks exactly like the upscaler
+				// switching itself on and off, which is how a player described it.
+				//
+				// Sample it over a window instead and then commit for the session.
+				// A path that is wrong but steady is a performance problem; a path
+				// that changes with view direction is a visible fault.
+				static uint32_t sampledFrames = 0;
+				static uint32_t firedFrames = 0;
+				static bool     decided = false;
+
+				if (!decided) {
+					++sampledFrames;
+					if (FrameTimeline::SceneCompleteFiredThisFrame()) {
+						++firedFrames;
 					}
+					constexpr uint32_t kWindow = 600;
+					if (sampledFrames >= kWindow) {
+						decided = true;
+						// Anything short of nearly every frame means the trigger is
+						// tied to something optional, and the steady path is the one
+						// that does not depend on it.
+						const bool reliable = firedFrames * 100 >= sampledFrames * 95;
+						upscaling->sceneCompleteFallback = !reliable;
+						if (reliable) {
+							logger::info("[UpscalerHooks] Scene-complete hook fired on {} of {} frames; "
+										 "upscaling before the game's post-processing for this session.",
+								firedFrames, sampledFrames);
+						} else {
+							logger::warn("[UpscalerHooks] Scene-complete hook fired on only {} of {} frames, "
+										 "so it depends on passes this scene does not always run. Using the "
+										 "pre-UI hook with the present override for the whole session "
+										 "instead: ENB's grading will not reach the upscaled image, but the "
+										 "image will not change as you turn the camera.",
+								firedFrames, sampledFrames);
+						}
+					}
+					// Until the decision is made, stay on the path that always
+					// reaches the screen rather than alternating.
+					upscaling->sceneCompleteFallback = true;
 				}
+
+				// Committed to the scene-complete path: the callback owns the
+				// evaluation. On a frame where the trigger misses we do nothing
+				// rather than run here, because at this point in the frame the
+				// copy-back no longer reaches the screen under ENB -- running
+				// would cost the work and show the same un-upscaled frame either
+				// way.
+				evaluateHere = upscaling->sceneCompleteFallback;
 			} else if (upscaling->sceneCompleteFallback) {
 				upscaling->sceneCompleteFallback = false;
 			}

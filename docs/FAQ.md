@@ -248,6 +248,24 @@ changed. You may want to delete
 `Data/SKSE/Plugins/SkyrimUpscaler/SkyrimUpscaler.ini` as well, which is just the
 settings file.
 
+## The log has errors in it. Is that bad?
+
+Some of them are normal and always there:
+
+- **`kFeatureDLSS_NR context is missing`** — expected. NVIDIA publishes no
+  Streamline plugin for Neural Rendering, so this mod drives it through NGX
+  directly. The check that produces this line exists in case one ever appears.
+- **`ngxResult failed 0xbad0000c`** during startup — the same thing, from the
+  other side.
+
+If you are on an older build you may also see `sl.imgui.dll missing` and a
+`kFeatureImGUI` error. That file was never needed and is not in the download;
+newer builds no longer look for it.
+
+What *is* worth reporting: a runtime DLL you were given reported as `missing`,
+anything marked `critical`, or a `DLSS(SR)=false` line when you expected DLSS to
+work.
+
 ## Something is still wrong
 
 The log at

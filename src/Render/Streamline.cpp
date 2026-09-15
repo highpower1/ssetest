@@ -212,8 +212,12 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 	// public options struct yet; requesting it here is what turns the log's
 	// "Ignoring plugin 'sl.dlss_nr' since it was not requested by the host" into
 	// a real supported/unsupported answer from the driver.
-	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
-	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureImGUI, sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
+	// kFeatureImGUI is deliberately absent. This plugin draws its interface
+	// through SKSE Menu Framework, never through Streamline's, and asking for a
+	// feature whose plugin is not shipped produces two red error lines at every
+	// startup that then get reported as faults. It was never used.
+	sl::Feature d3d12FeaturesToLoad[] = { sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureDLSS_G, sl::kFeatureReflex, sl::kFeaturePCL };
+	sl::Feature d3d12SafeFeaturesToLoad[] = { sl::kFeatureDLSS, sl::kFeatureDLSS_RR, sl::kFeatureDLSS_NR, sl::kFeatureNIS, sl::kFeatureReflex, sl::kFeaturePCL };
 	if (a_renderAPI == sl::RenderAPI::eD3D12) {
 		if constexpr (Upscaling::kEnableDLSSG) {
 			pref.featuresToLoad = d3d12FeaturesToLoad;
@@ -240,7 +244,10 @@ void Streamline::Initialize(sl::RenderAPI a_renderAPI)
 		pref.pathsToPlugins = pluginPaths;
 		pref.numPathsToPlugins = _countof(pluginPaths);
 
-		for (const auto& runtimeDependency : { L"sl.imgui.dll", L"sl.dlss.dll", L"nvngx_dlss.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.dlss_d.dll", L"nvngx_dlssd.dll", L"sl.dlss_nr.dll", L"nvngx_dlssnr.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
+		// sl.imgui.dll is not in this list any more. It is not shipped, is not
+		// used, and reporting it as "missing" every startup sent people looking
+		// for a file that was never needed.
+		for (const auto& runtimeDependency : { L"sl.dlss.dll", L"nvngx_dlss.dll", L"sl.dlss_g.dll", L"nvngx_dlssg.dll", L"sl.dlss_d.dll", L"nvngx_dlssd.dll", L"sl.dlss_nr.dll", L"nvngx_dlssnr.dll", L"sl.nis.dll", L"sl.reflex.dll", L"sl.pcl.dll" }) {
 			const auto dependencyPath = std::filesystem::path(interposerDirectory) / runtimeDependency;
 			logger::info("[Streamline] Runtime dependency {} {}", dependencyPath.string(), std::filesystem::exists(dependencyPath) ? "found" : "missing");
 		}
@@ -493,8 +500,15 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 	}
 	if (UsesD3D12()) {
 		CheckFeature(sl::kFeatureDLSS_RR, a_adapter, featureDLSSD, "DLSS-RR", &dlssdStatus);
+		// Expected to fail: NVIDIA ships no Streamline plugin for Neural
+		// Rendering, which is why this project drives NGX directly. The check is
+		// kept in case one ever appears, but its failure is the normal case and
+		// the log should not present it as a fault -- people were reporting it.
 		CheckFeature(sl::kFeatureDLSS_NR, a_adapter, featureDLSSNR, "DLSS-NR", &dlssnrStatus);
 		if (!featureDLSSNR) {
+			logger::info("[Streamline] No DLSS-NR plugin, as expected -- Neural Rendering runs through NGX "
+						 "directly. The 'kFeatureDLSS_NR context is missing' lines above come from that "
+						 "check and are not a problem.");
 			PrepareDirectDLSSNR();
 		}
 	} else {
@@ -508,7 +522,10 @@ void Streamline::CheckFeatures(IDXGIAdapter* a_adapter)
 	CheckFeature(sl::kFeatureNIS, a_adapter, featureNIS, "NIS");
 	CheckFeature(sl::kFeaturePCL, a_adapter, featurePCL, "PCL");
 	if (UsesD3D12()) {
-		CheckFeature(sl::kFeatureImGUI, a_adapter, featureImGUI, "SL ImGui");
+		// Not checked: see the feature list above. The interface is SKSE Menu
+		// Framework's, not Streamline's.
+		featureImGUI = false;
+		std::ignore = a_adapter;
 	} else {
 		featureImGUI = false;
 	}
