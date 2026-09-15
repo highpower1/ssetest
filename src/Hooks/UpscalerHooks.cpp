@@ -62,6 +62,84 @@ namespace
 	bool           g_drsOffsetUsable = true;
 	float          g_drsLastWritten = 0.0f;
 
+	// ---- camera-state patch self-repair ---------------------------------
+	//
+	// The camera-state NOP is written at an offset that is the same for every
+	// supported build, and on a build where it is wrong it corrupts camera
+	// state. That was reported as a third-person camera sitting high and to the
+	// left with the field of view changing as the player looked around, and it
+	// cannot be reproduced here, so there is no way to find the right offset by
+	// inspection.
+	//
+	// So do not try. Keep the original bytes, watch for the symptom, and put
+	// them back if it appears. What distinguishes the fault from a legitimate
+	// field-of-view change is that it oscillates: sprinting, drawing a bow and
+	// the killcam all ramp the value smoothly in one direction, while a
+	// corrupted camera flips between values frame to frame. Count reversals of
+	// a large per-frame delta, and revert on a run of them.
+	std::uintptr_t g_cameraPatchSite = 0;
+	std::uint8_t   g_cameraPatchOriginal[10]{};
+	bool           g_cameraPatchApplied = false;
+	bool           g_cameraPatchReverted = false;
+	float          g_lastFOV = 0.0f;
+	float          g_lastFOVDelta = 0.0f;
+	std::uint32_t  g_fovReversals = 0;
+
+	// A vertical field of view moves by a fraction of a degree per frame when
+	// the game is changing it on purpose. Anything past this is not animation.
+	constexpr float kFOVJumpRadians = 0.02f;   // ~1.1 degrees in one frame
+	constexpr std::uint32_t kFOVReversalsToRevert = 12;
+
+	void WatchCameraPatchForCorruption()
+	{
+		if (!g_cameraPatchApplied || g_cameraPatchReverted) {
+			return;
+		}
+
+		const auto projection = Util::GetCameraProjection();
+		if (!projection.cameraState || !projection.usedMatrixFOV || projection.cameraFOV <= 0.0f) {
+			return;
+		}
+
+		const float fov = projection.cameraFOV;
+		if (g_lastFOV <= 0.0f) {
+			g_lastFOV = fov;
+			return;
+		}
+
+		const float delta = fov - g_lastFOV;
+		g_lastFOV = fov;
+
+		if (std::abs(delta) < kFOVJumpRadians) {
+			// A quiet frame ends the run. Real corruption does not stop.
+			g_fovReversals = 0;
+			g_lastFOVDelta = delta;
+			return;
+		}
+
+		if (g_lastFOVDelta != 0.0f && ((delta > 0.0f) != (g_lastFOVDelta > 0.0f))) {
+			++g_fovReversals;
+		} else {
+			g_fovReversals = 0;
+		}
+		g_lastFOVDelta = delta;
+
+		if (g_fovReversals < kFOVReversalsToRevert) {
+			return;
+		}
+
+		// Put the game's own bytes back. Ghosting is the price and it is far
+		// cheaper than a camera that cannot be aimed.
+		REL::safe_write(g_cameraPatchSite, g_cameraPatchOriginal, sizeof(g_cameraPatchOriginal));
+		g_cameraPatchReverted = true;
+		logger::warn("[UpscalerHooks] The field of view has flipped direction {} times in a row by more "
+					 "than {:.3f} rad a frame. That is the signature of the camera-state jitter patch "
+					 "landing on the wrong bytes for this game build, so the original code has been "
+					 "restored and the patch will not be applied again this session. The image may ghost "
+					 "slightly. Please report this line with your exact game version.",
+			g_fovReversals, kFOVJumpRadians);
+	}
+
 	// BSGraphics::Renderer InitD3D -- fires once when the renderer is set up.
 	struct Hook_InitD3D
 	{
@@ -106,6 +184,7 @@ namespace
 			// Capture the live camera into Util::CameraFrame + advance frameCount.
 			// (CaptureWorldCamera resets useJitter=false, so inject jitter AFTER.)
 			Util::CaptureWorldCamera();
+			WatchCameraPatchForCorruption();
 
 			// STEP 3: inject Halton jitter for DLSS/FSR temporal accumulation.
 			// The jitter-always-on NOP patches force the engine to apply
@@ -366,7 +445,10 @@ namespace UpscalerHooks
 							 "line above with your exact game version.");
 			}
 			if (patchCamera) {
+				std::memcpy(g_cameraPatchOriginal, reinterpret_cast<const void*>(cameraSite), sizeof(g_cameraPatchOriginal));
+				g_cameraPatchSite = cameraSite;
 				REL::safe_write(cameraSite, nop10, sizeof(nop10));
+				g_cameraPatchApplied = true;
 			} else if (!patchRequested) {
 				logger::warn("[UpscalerHooks] The camera-state jitter patch is disabled by setting. The scene "
 							 "may render without our sub-pixel offset while the upscaler is told there is "

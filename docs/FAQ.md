@@ -139,9 +139,21 @@ To stop it happening, set `UICompositeDebugKey = 0` in
 
 ## My camera is in the wrong place, or the field of view keeps changing
 
-The mod now checks both of the places it writes into the game before writing,
-and declines where the data does not look right, so this should no longer
-happen. If it still does, set `CameraStateJitterPatch = 0` in
+The mod should now repair this by itself, during play, without a restart.
+
+It writes ten bytes into the game's camera code so the engine keeps applying
+the sub-pixel offset that upscaling needs. That address is the same for every
+supported game version, and on a version where it is wrong it damages the
+camera instead. Since that cannot be reproduced on the author's machine, the mod
+keeps the original bytes, watches the field of view, and puts them back if it
+sees the fault: a field of view flipping direction frame after frame, which is
+what corruption looks like and what sprinting or drawing a bow does not.
+
+If that happens you will find a line about it in the log, and the image may
+ghost slightly afterwards. **Please report that line with your exact game
+version** — it is what is needed to fix this properly rather than by recovery.
+
+To skip the patch entirely, set `CameraStateJitterPatch = 0` in
 `Data/SKSE/Plugins/SkyrimUpscaler/SkyrimUpscaler.ini` and restart.
 
 This mod overwrites ten bytes of the game's camera code so the engine keeps
