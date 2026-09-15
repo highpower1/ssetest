@@ -17,6 +17,7 @@
 #include "Upscaler/D3D12Upscaler.h"
 
 extern bool enbLoaded;
+extern bool reshadeLoaded;
 
 namespace
 {
@@ -530,7 +531,10 @@ void DX12SwapChain::RecreateInteropTextures()
 	textureDesc.Usage = D3D11_USAGE_DEFAULT;
 	textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
 
-	if (enbLoaded) {
+	// Shared with D3D12 whenever anything else draws into the buffer we hand the
+	// game, because the composite and the frame generator's hud-less input both
+	// read it from there. ENB and ReShade are the two that do.
+	if (enbLoaded || reshadeLoaded) {
 		swapChainBufferProxyENB = std::make_unique<D3D11D3D12SharedTexture>(textureDesc, d3d11Device.get(), d3d12Device.get());
 		swapChainBufferProxy = nullptr;
 	} else {
@@ -899,7 +903,7 @@ HRESULT DX12SwapChain::GetBuffer(UINT a_buffer, REFIID a_riid, void** a_surface)
 	static bool logged = false;
 	if (!logged) {
 		logged = true;
-		logger::info("[DX12SwapChain] GetBuffer first call (enbPath={})", swapChainBufferProxyENB != nullptr);
+		logger::info("[DX12SwapChain] GetBuffer first call (sharedBuffer={})", swapChainBufferProxyENB != nullptr);
 	}
 	if (!a_surface) {
 		return E_POINTER;

@@ -13,7 +13,9 @@
 
 [b]Install one or the other. Never both.[/b] If both are present, uninstall one before reporting anything.
 
-[b]ENB is fine.[/b] ENB is supported and tested. Your preset's tonemapping, colour grading and effects all still apply to the upscaled image.
+[b]ENB is fine, and so is ReShade.[/b] Both draw into the same buffer this mod hands the game, and their output reaches the screen through it. Your ENB preset's tonemapping, colour grading and effects all still apply to the upscaled image.
+
+ENB is the one that has been tested properly. ReShade works through the same mechanism but has not been run here -- if something is off with it, say so and include the log. One known wrinkle: ReShade effects that hunt for the game's depth buffer can be thrown by the quality modes, which change the resolution the scene renders at. Try [b]Native AA[/b] before concluding the two cannot coexist.
 
 [line]
 

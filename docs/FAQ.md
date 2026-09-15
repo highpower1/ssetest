@@ -211,6 +211,17 @@ Almost certainly, with two exceptions:
 - **Community Shaders** — no. See the top of the page.
 - **Other upscaler mods** — no. Only one of them can hook the renderer. Pick one.
 
+**ENB and ReShade both work.** They draw into the same buffer this mod hands the
+game, and it is shared with D3D12 when either is present so their output reaches
+the screen through the composite. ENB is the one that has actually been tested;
+ReShade support is built on the same mechanism but has not been run here, so if
+something is wrong with it, a report with the log is genuinely useful.
+
+One thing worth knowing about ReShade: effects that rely on finding the game's
+depth buffer can be confused by the quality modes, which change the resolution
+the scene is rendered at. If a depth-based effect misbehaves, try **Native AA**
+before assuming the two mods cannot coexist.
+
 ENB, ReShade, weather mods, ENB presets, texture packs, lighting mods and script
 mods are all unaffected. This mod does not touch anything the game saves, so it
 can be installed or removed mid-playthrough without breaking a save.

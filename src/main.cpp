@@ -23,9 +23,17 @@
 // SE and AE.
 // ===========================================================================
 
-// Global with external linkage: the render backend (src/Render/DX12SwapChain)
-// links against `extern bool enbLoaded;` to choose the ENB-compatible present path.
+// Globals with external linkage: the render backend (src/Render/DX12SwapChain)
+// links against these to choose which present path to build.
+//
+// ENB and ReShade sit in the same place from this plugin's point of view. Both
+// draw into whatever the swapchain's GetBuffer hands them and expect their work
+// to reach the screen, so both need the buffer we hand out to be a texture we
+// can also read on D3D12 -- that is what the UI composite and the frame
+// generator's hud-less input are read from. Without it the overlay's output is
+// on a D3D11 texture nothing downstream can see.
 bool enbLoaded = false;
+bool reshadeLoaded = false;
 
 namespace
 {
@@ -106,6 +114,33 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 		enbLoaded = true;
 	} else {
 		logger::info("ENB not detected");
+	}
+
+	// ReShade. There is no API to ask, so look for the shapes an install takes:
+	// its own module, or one of the wrapper names carrying an export only
+	// ReShade defines. A false negative costs the shared-texture present path,
+	// which is the same thing an ENB-less install already gets, so the check
+	// errs towards saying no rather than guessing yes.
+	{
+		const auto hasReShadeExport = [](HMODULE a_module) {
+			return a_module &&
+			       (GetProcAddress(a_module, "ReShadeRegisterAddon") ||
+			        GetProcAddress(a_module, "ReShadeGetBasePath") ||
+			        GetProcAddress(a_module, "ReShadeRegisterEvent"));
+		};
+		const wchar_t* candidates[]{ L"ReShade64.dll", L"dxgi.dll", L"d3d11.dll", L"d3d12.dll", L"opengl32.dll" };
+		for (const auto* name : candidates) {
+			auto* module = GetModuleHandleW(name);
+			if (name[0] == L'R' ? module != nullptr : hasReShadeExport(module)) {
+				reshadeLoaded = true;
+				logger::info("ReShade detected via {} -- enabling the shared-buffer present path",
+					stl::utf16_to_utf8(name).value_or("?"));
+				break;
+			}
+		}
+		if (!reshadeLoaded) {
+			logger::info("ReShade not detected");
+		}
 	}
 
 	DX11Hooks::Install();
